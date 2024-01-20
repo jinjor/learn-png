@@ -1,6 +1,9 @@
-export const parse = (data: Uint8Array): void => {
-  const view = new DataView(data.buffer);
-  const ctx = { view, offset: 0 };
+import pako from "pako";
+const unzip = pako.inflate;
+
+export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
+  const view = new DataView(buffer);
+  const ctx = { view, offset: 0 } as Context;
   readSignature(ctx);
   const chunks: (Chunk | null)[] = [];
   while (true) {
@@ -11,7 +14,79 @@ export const parse = (data: Uint8Array): void => {
     }
   }
   console.log(chunks);
-  console.log("done");
+  const ihdr = ctx.ihdr;
+  if (ihdr == null) {
+    throw new Error("IHDR is not defined");
+  }
+
+  const zipped = concatBuffers(
+    chunks.flatMap((chunk) => {
+      if (chunk?.type === "IDAT") {
+        return chunk.data;
+      }
+      return [];
+    })
+  );
+  const unzipped = await unzip(zipped);
+  console.log(zipped.length, unzipped.length);
+
+  const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
+  if (ihdr.interlaceMethod !== 0) {
+    throw new Error("Interlace is not supported");
+  }
+  const bytesPerLine = bytesPerPixel * ihdr.width + 1;
+  const pixels: RGBA[][] = [];
+  for (let y = 0; y < ihdr.height; y++) {
+    const line = new Uint8Array(
+      unzipped.buffer,
+      y * bytesPerLine,
+      bytesPerLine
+    );
+    const pixelLine: RGBA[] = [];
+    for (let x = 0; x < ihdr.width; x++) {
+      const offset = x * bytesPerPixel + 1;
+      const r = line[offset];
+      const g = line[offset + 1];
+      const b = line[offset + 2];
+      const a = bytesPerPixel === 4 ? line[offset + 3] : 255;
+      pixelLine.push({ r, g, b, a });
+    }
+    pixels.push(pixelLine);
+  }
+  return pixels;
+};
+
+const concatBuffers = (bufs: Uint8Array[]): Uint8Array => {
+  const totalLength = bufs.reduce((acc, buf) => acc + buf.length, 0);
+  const concatBuf = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const buf of bufs) {
+    concatBuf.set(buf, offset);
+    offset += buf.length;
+  }
+  return concatBuf;
+};
+
+const getbytesPerPixel = (colorType: number, bitDepth: number): number => {
+  const bits = getBitsPerPixel(colorType, bitDepth);
+  return Math.ceil(bits / 8);
+};
+
+const getBitsPerPixel = (colorType: number, bitDepth: number): number => {
+  switch (colorType) {
+    case 0:
+      return bitDepth;
+    case 2:
+      return 3 * bitDepth;
+    case 3:
+      return bitDepth;
+    case 4:
+      return 2 * bitDepth;
+    case 6:
+      return 4 * bitDepth;
+    default:
+      throw new Error("Invalid color type: " + colorType);
+  }
 };
 
 type Context = {
@@ -50,7 +125,7 @@ type PLTE = {
 };
 type IDAT = {
   type: "IDAT";
-  length: number;
+  data: Uint8Array;
 };
 type IEND = {
   type: "IEND";
@@ -59,6 +134,12 @@ type RGB = {
   r: number;
   g: number;
   b: number;
+};
+type RGBA = {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
 };
 type TRNS = {
   type: "tRNS";
@@ -209,10 +290,11 @@ const readPLTE = (ctx: Context, length: number): PLTE => {
 };
 
 const readIDAT = (ctx: Context, length: number): IDAT => {
+  const data = new Uint8Array(ctx.view.buffer, ctx.offset, length);
   ctx.offset += length;
   return {
     type: "IDAT",
-    length,
+    data,
   };
 };
 

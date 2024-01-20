@@ -1,18 +1,19 @@
 {
-  "name": "learn-png",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": "true",
   "scripts": {
+    "build": "esbuild src/app.mts --bundle --outfile=dist/app.mjs --format=esm",
+    "serve": "npx -y http-server .",
+    "preview": "pnpm run build && pnpm run serve",
     "test": "tsx src/index.ts assets/example.png"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "@types/node": "^20.11.5",
     "biome": "^0.3.3",
+    "esbuild": "^0.19.11",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "pako": "^2.1.0"
   }
 }

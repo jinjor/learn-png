@@ -6,4 +6,11 @@ const outDir = "./out";
 
 const data = fs.readFileSync(filePath);
 
-parse(data);
+parse(data.buffer)
+  .then((parsed) => {
+    console.log(parsed[0].length, parsed.length);
+    console.log("done");
+  })
+  .catch((err) => {
+    console.error(err);
+  });
