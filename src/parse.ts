@@ -42,13 +42,31 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
       y * bytesPerLine,
       bytesPerLine
     );
+    const filterType = line[0];
+    const scanLine = line.slice(1);
     const pixelLine: RGBA[] = [];
+
+    console.log(filterType);
+    switch (filterType) {
+      case 0: {
+        break;
+      }
+      case 1: {
+        for (let i = bytesPerPixel; i < scanLine.length; i++) {
+          scanLine[i] += scanLine[i - bytesPerPixel];
+        }
+        break;
+      }
+      default: {
+        throw new Error("not implemented");
+      }
+    }
     for (let x = 0; x < ihdr.width; x++) {
-      const offset = x * bytesPerPixel + 1;
-      const r = line[offset];
-      const g = line[offset + 1];
-      const b = line[offset + 2];
-      const a = bytesPerPixel === 4 ? line[offset + 3] : 255;
+      const offset = x * bytesPerPixel;
+      const r = scanLine[offset];
+      const g = scanLine[offset + 1];
+      const b = scanLine[offset + 2];
+      const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
       pixelLine.push({ r, g, b, a });
     }
     pixels.push(pixelLine);

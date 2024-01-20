@@ -8,6 +8,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
+    "@types/pako": "^2.0.3",
     "biome": "^0.3.3",
     "esbuild": "^0.19.11",
     "tsx": "^4.7.0",

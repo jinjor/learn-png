@@ -7,3 +7,4 @@
 - https://www.media.mit.edu/pia/Research/deepview/exif.html
 - http://www2.airnet.ne.jp/~kenshi/exif.html#FORMAT
 - https://www.hackerfactor.com/blog/index.php?/archives/895-Connecting-the-iDOTs.html
+- https://qiita.com/kouheiszk/items/17485ccb902e8190923b
