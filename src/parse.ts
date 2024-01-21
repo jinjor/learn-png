@@ -550,7 +550,7 @@ const readStringUntilLength = (ctx: Context, length: number): string => {
 };
 const readRGBUntilLength = (ctx: Context, length: number): RGB[] => {
   const rgb: RGB[] = [];
-  for (let i = 0; i < length; i++) {
+  for (let i = 0; i < length; i += 3) {
     const r = ctx.view.getUint8(ctx.offset);
     ctx.offset += 1;
     const g = ctx.view.getUint8(ctx.offset);
