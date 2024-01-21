@@ -9,6 +9,8 @@
 - https://www.hackerfactor.com/blog/index.php?/archives/895-Connecting-the-iDOTs.html
 - https://qiita.com/kouheiszk/items/17485ccb902e8190923b
 - https://darkcrowcorvus.hatenablog.jp/entry/2017/02/12/235044
+- https://developer.mozilla.org/ja/docs/Web/API/Streams_API/Using_readable_streams
+- https://github.com/mdn/dom-examples/tree/main/streams/png-transform-stream
 
 ## 気づいたこと
 

@@ -1,49 +1,21 @@
 import pako from "pako";
-const unzip = pako.inflate;
 
-export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
-  const view = new DataView(buffer);
-  const ctx = { view, offset: 0 } as Context;
-  readSignature(ctx);
-  const chunks: (Chunk | null)[] = [];
-  while (true) {
-    const chunk = readChunk(ctx);
-    chunks.push(chunk);
-    if (chunk?.type === "IEND") {
-      break;
-    }
-  }
-  // console.log(chunks);
-  const ihdr = ctx.ihdr;
-  if (ihdr == null) {
-    throw new Error("IHDR is not defined");
-  }
-
-  const zipped = concatBuffers(
-    chunks.flatMap((chunk) => {
-      if (chunk?.type === "IDAT") {
-        return chunk.data;
-      }
-      return [];
-    })
-  );
-  const unzipped = await unzip(zipped);
-  // console.log(zipped.length, unzipped.length);
-
-  const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
-  if (ihdr.interlaceMethod !== 0) {
-    throw new Error("Interlace is not supported");
-  }
-  const bytesPerLine = bytesPerPixel * ihdr.width + 1;
-  const pixels: RGBA[][] = [];
-
+export async function* pixelStream(stream: AsyncIterable<Uint8Array>) {
+  let ihdr: IHDR | undefined;
   let prevLine: Uint8Array | null = null;
-  for (let y = 0; y < ihdr.height; y++) {
-    const line = new Uint8Array(
-      unzipped.buffer,
-      y * bytesPerLine,
-      bytesPerLine
-    );
+  for await (const chunk of rowStream(stream)) {
+    if (chunk.type === "IHDR") {
+      ihdr = chunk;
+      continue;
+    }
+    if (chunk.type !== "row") {
+      continue;
+    }
+    if (ihdr == null) {
+      throw new Error("IHDR is not defined");
+    }
+    const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
+    const line = chunk.data;
     const filterType = line[0];
     const scanLine = line.slice(1);
     const pixelLine: RGBA[] = [];
@@ -106,10 +78,124 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
       const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
       pixelLine.push({ r, g, b, a });
     }
-    pixels.push(pixelLine);
+    yield pixelLine;
   }
-  return pixels;
-};
+}
+
+export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
+  let tmp = new Uint8Array(0);
+
+  let ihdr: IHDR | undefined;
+  for await (const chunk of unzippedStream(stream)) {
+    yield chunk;
+    if (chunk.type === "IHDR") {
+      ihdr = chunk;
+      continue;
+    }
+    if (chunk.type === "data") {
+      if (ihdr == null) {
+        throw new Error("IHDR is not defined");
+      }
+      let buffer = concatBuffers([tmp, chunk.data]);
+      const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
+      const width = ihdr.width;
+      // const height = ihdr.height;
+      const bytesPerRow = width * bytesPerPixel + 1;
+      while (buffer.length >= bytesPerRow) {
+        const row = buffer.slice(0, bytesPerRow);
+        yield {
+          type: "row",
+          data: row,
+        } as const;
+        buffer = buffer.slice(bytesPerRow);
+      }
+      tmp = buffer;
+    }
+  }
+}
+
+export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
+  let resolve: () => void;
+  let promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  let done = false;
+  let results: (Chunk | { type: "data"; data: Uint8Array })[] = [];
+
+  const inflator = new pako.Inflate();
+  inflator.onData = (data: Uint8Array) => {
+    results.push({ type: "data", data });
+    resolve();
+    promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+  };
+  inflator.onEnd = () => {
+    done = true;
+    resolve();
+  };
+  (async () => {
+    // TODO: error handling
+    for await (const chunk of chunkStream(stream)) {
+      if (chunk === null) {
+        continue;
+      }
+      if (chunk.type === "IDAT") {
+        inflator.push(chunk.data);
+      } else {
+        results.push(chunk);
+      }
+    }
+  })();
+  while (!done) {
+    await promise;
+    yield* results;
+    results = [];
+  }
+}
+
+export async function* chunkStream(stream: AsyncIterable<Uint8Array>) {
+  let tmp = new Uint8Array(0);
+  let sigRead = false;
+  for await (const chunk of stream) {
+    let buffer = concatBuffers([tmp, chunk]);
+    while (true) {
+      const view = new DataView(buffer.buffer);
+      if (!sigRead) {
+        const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+        for (let i = 0; i < pngSignature.length; i++) {
+          if (view.getUint8(i) !== pngSignature[i]) {
+            throw new Error("Invalid PNG signature");
+          }
+        }
+        sigRead = true;
+        buffer = buffer.slice(8);
+        continue;
+      }
+
+      if (buffer.length < 12) {
+        break;
+      }
+      const length = view.getUint32(0);
+      const chunkLength = length + 12;
+      if (buffer.length < chunkLength) {
+        break;
+      }
+      const type = _readStringUntilLength(view, 4, 4);
+      const ctx = {
+        view,
+        offset: 8,
+      };
+      const data = readData(ctx, length, type);
+      const crc = ctx.view.getUint32(ctx.offset);
+
+      buffer = buffer.slice(chunkLength);
+      yield data;
+    }
+    tmp = buffer;
+  }
+}
+
 const paeth = (
   a: number /* left */,
   b: number /* up */,
@@ -544,6 +630,18 @@ const readStringUntilLength = (ctx: Context, length: number): string => {
   for (let i = 0; i < length; i++) {
     const c = ctx.view.getUint8(ctx.offset);
     ctx.offset += 1;
+    str.push(String.fromCharCode(c));
+  }
+  return str.join("");
+};
+const _readStringUntilLength = (
+  view: DataView,
+  offset: number,
+  length: number
+): string => {
+  const str: string[] = [];
+  for (let i = offset; i < offset + length; i++) {
+    const c = view.getUint8(i);
     str.push(String.fromCharCode(c));
   }
   return str.join("");

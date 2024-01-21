@@ -1,10 +1,10 @@
 {
   "private": "true",
   "scripts": {
-    "build": "esbuild src/app.mts --bundle --outfile=dist/app.mjs --format=esm",
+    "build": "esbuild src/app.mts --bundle --outfile=dist/app.mjs --format=esm --target=es2018",
     "serve": "npx -y http-server .",
     "preview": "pnpm run build && pnpm run serve",
-    "test": "tsx src/index.ts assets/sd.png"
+    "test": "tsx src/index.ts assets/mac_ss.png --format=esm --target=es2018"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
