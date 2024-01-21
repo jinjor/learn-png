@@ -1,6 +1,9 @@
 import { parse } from "./parse";
 
-const res = await fetch("./assets/example.png");
+const img = document.getElementById("img") as HTMLImageElement;
+const src = img.src;
+
+const res = await fetch(src);
 const binary = await res.arrayBuffer();
 
 const parsed = await parse(binary);

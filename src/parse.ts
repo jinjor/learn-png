@@ -36,6 +36,8 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
   }
   const bytesPerLine = bytesPerPixel * ihdr.width + 1;
   const pixels: RGBA[][] = [];
+
+  let prevLine: Uint8Array | null = null;
   for (let y = 0; y < ihdr.height; y++) {
     const line = new Uint8Array(
       unzipped.buffer,
@@ -53,7 +55,40 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
       }
       case 1: {
         for (let i = bytesPerPixel; i < scanLine.length; i++) {
-          scanLine[i] += scanLine[i - bytesPerPixel];
+          scanLine[i] = (scanLine[i] + scanLine[i - bytesPerPixel]) % 256;
+        }
+        break;
+      }
+      case 2: {
+        for (let i = 0; i < scanLine.length; i++) {
+          scanLine[i] = (scanLine[i] + prevLine![i]) % 256;
+        }
+        break;
+      }
+      case 3: {
+        for (let i = 0; i < bytesPerPixel; i++) {
+          scanLine[i] = (scanLine[i] + prevLine![i]) / 2;
+        }
+        for (let i = bytesPerPixel; i < scanLine.length; i++) {
+          scanLine[i] =
+            (scanLine[i] + (scanLine[i - bytesPerPixel] + prevLine![i]) / 2) %
+            256;
+        }
+        break;
+      }
+      case 4: {
+        for (let i = 0; i < bytesPerPixel; i++) {
+          scanLine[i] = (scanLine[i] + paeth(0, prevLine![i], 0)) % 256;
+        }
+        for (let i = bytesPerPixel; i < scanLine.length; i++) {
+          scanLine[i] =
+            (scanLine[i] +
+              paeth(
+                scanLine[i - bytesPerPixel],
+                prevLine![i],
+                prevLine![i - bytesPerPixel]
+              )) %
+            256;
         }
         break;
       }
@@ -61,6 +96,8 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
         throw new Error("not implemented");
       }
     }
+    prevLine = scanLine;
+
     for (let x = 0; x < ihdr.width; x++) {
       const offset = x * bytesPerPixel;
       const r = scanLine[offset];
@@ -72,6 +109,23 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
     pixels.push(pixelLine);
   }
   return pixels;
+};
+const paeth = (
+  a: number /* left */,
+  b: number /* up */,
+  c: number /* left-up */
+) => {
+  const p = a + b - c;
+  const pa = Math.abs(p - a); // left distance
+  const pb = Math.abs(p - b); // up distance
+  const pc = Math.abs(p - c); // left+up distance
+  if (pa <= pb && pa <= pc) {
+    return a;
+  }
+  if (pb <= pc) {
+    return b;
+  }
+  return c;
 };
 
 const concatBuffers = (bufs: Uint8Array[]): Uint8Array => {
