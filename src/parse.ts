@@ -1,3 +1,4 @@
+import exif from "exif-reader";
 import pako from "pako";
 const unzip = pako.inflate;
 
@@ -13,7 +14,15 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
       break;
     }
   }
-  // console.log(chunks);
+  for (const chunk of chunks) {
+    if (chunk?.type === "eXIf" && typeof Buffer !== "undefined") {
+      console.log(exif(Buffer.from(chunk.data)));
+    } else if (chunk?.type === "IDAT") {
+      // skip
+    } else {
+      console.log(chunk);
+    }
+  }
   const ihdr = ctx.ihdr;
   if (ihdr == null) {
     throw new Error("IHDR is not defined");
@@ -258,7 +267,7 @@ type PHYS = {
 };
 type EXIF = {
   type: "eXIf";
-  length: number;
+  data: Uint8Array;
 };
 type IDOT = {
   type: "iDOT";
@@ -511,10 +520,11 @@ const readPHYS = (ctx: Context, length: number): PHYS => {
   };
 };
 const readEXIF = (ctx: Context, length: number): EXIF => {
+  const data = new Uint8Array(ctx.view.buffer, ctx.offset, length);
   ctx.offset += length;
   return {
     type: "eXIf",
-    length,
+    data,
   };
 };
 const readIDOT = (ctx: Context, length: number): IDOT => {

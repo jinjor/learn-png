@@ -2,10 +2,12 @@
 
 ## Reference
 
+- https://oss-attachment.cn-hangzhou.oss.aliyun-inc.com/DC-008-Translation-2016-E.pdf
 - https://ftp-osl.osuosl.org/pub/libpng/documents/pngext-1.5.0.html#C.eXIf
 - https://f4.cosmoway.net/photo_exif/
 - https://www.media.mit.edu/pia/Research/deepview/exif.html
 - http://www2.airnet.ne.jp/~kenshi/exif.html#FORMAT
+- https://www.cipa.jp/std/documents/j/DC-008-2012_J_C.pdf
 - https://www.hackerfactor.com/blog/index.php?/archives/895-Connecting-the-iDOTs.html
 - https://qiita.com/kouheiszk/items/17485ccb902e8190923b
 - https://darkcrowcorvus.hatenablog.jp/entry/2017/02/12/235044
