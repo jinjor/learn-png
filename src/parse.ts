@@ -1,179 +1,9 @@
-import pako from "pako";
 import {
-  concatBuffers,
   readBytesUntilLength,
   readStringUntilLength,
   readStringUntilNull,
 } from "./util";
 import { readExifData } from "./exif";
-const unzip = pako.inflate;
-
-export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
-  const view = new DataView(buffer);
-  const ctx = { view, offset: 0 } as Context;
-  readSignature(ctx);
-  const chunks: (Chunk | null)[] = [];
-  while (true) {
-    const chunk = readChunk(ctx);
-    chunks.push(chunk);
-    if (chunk?.type === "IEND") {
-      break;
-    }
-  }
-  for (const chunk of chunks) {
-    if (chunk?.type === "IDAT") {
-      // skip
-    } else {
-      console.log(chunk);
-    }
-  }
-  const ihdr = ctx.ihdr;
-  if (ihdr == null) {
-    throw new Error("IHDR is not defined");
-  }
-
-  const zipped = concatBuffers(
-    chunks.flatMap((chunk) => {
-      if (chunk?.type === "IDAT") {
-        return chunk.data;
-      }
-      return [];
-    })
-  );
-  const unzipped = await unzip(zipped);
-  // console.log(zipped.length, unzipped.length);
-
-  const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
-  if (ihdr.interlaceMethod !== 0) {
-    throw new Error("Interlace is not supported");
-  }
-  const bytesPerLine = bytesPerPixel * ihdr.width + 1;
-  const pixels: RGBA[][] = [];
-
-  let prevLine: Uint8Array | null = null;
-  for (let y = 0; y < ihdr.height; y++) {
-    const line = new Uint8Array(
-      unzipped.buffer,
-      y * bytesPerLine,
-      bytesPerLine
-    );
-    const filterType = line[0];
-    const scanLine = line.slice(1);
-    const pixelLine: RGBA[] = [];
-
-    inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
-    prevLine = scanLine;
-
-    for (let x = 0; x < ihdr.width; x++) {
-      const offset = x * bytesPerPixel;
-      const r = scanLine[offset];
-      const g = scanLine[offset + 1];
-      const b = scanLine[offset + 2];
-      const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
-      pixelLine.push({ r, g, b, a });
-    }
-    pixels.push(pixelLine);
-  }
-  return pixels;
-};
-
-export const inverseFilter = (
-  filterType: number,
-  bytesPerPixel: number,
-  scanLine: Uint8Array,
-  prevLine: Uint8Array | null
-) => {
-  switch (filterType) {
-    case 0: {
-      break;
-    }
-    case 1: {
-      for (let i = bytesPerPixel; i < scanLine.length; i++) {
-        scanLine[i] = (scanLine[i] + scanLine[i - bytesPerPixel]) % 256;
-      }
-      break;
-    }
-    case 2: {
-      for (let i = 0; i < scanLine.length; i++) {
-        scanLine[i] = (scanLine[i] + prevLine![i]) % 256;
-      }
-      break;
-    }
-    case 3: {
-      for (let i = 0; i < bytesPerPixel; i++) {
-        scanLine[i] = (scanLine[i] + prevLine![i]) / 2;
-      }
-      for (let i = bytesPerPixel; i < scanLine.length; i++) {
-        scanLine[i] =
-          (scanLine[i] + (scanLine[i - bytesPerPixel] + prevLine![i]) / 2) %
-          256;
-      }
-      break;
-    }
-    case 4: {
-      for (let i = 0; i < bytesPerPixel; i++) {
-        scanLine[i] = (scanLine[i] + paeth(0, prevLine![i], 0)) % 256;
-      }
-      for (let i = bytesPerPixel; i < scanLine.length; i++) {
-        scanLine[i] =
-          (scanLine[i] +
-            paeth(
-              scanLine[i - bytesPerPixel],
-              prevLine![i],
-              prevLine![i - bytesPerPixel]
-            )) %
-          256;
-      }
-      break;
-    }
-    default: {
-      throw new Error("not implemented");
-    }
-  }
-};
-
-const paeth = (
-  a: number /* left */,
-  b: number /* up */,
-  c: number /* left-up */
-) => {
-  const p = a + b - c;
-  const pa = Math.abs(p - a); // left distance
-  const pb = Math.abs(p - b); // up distance
-  const pc = Math.abs(p - c); // left+up distance
-  if (pa <= pb && pa <= pc) {
-    return a;
-  }
-  if (pb <= pc) {
-    return b;
-  }
-  return c;
-};
-
-export const getbytesPerPixel = (
-  colorType: number,
-  bitDepth: number
-): number => {
-  const bits = getBitsPerPixel(colorType, bitDepth);
-  return Math.ceil(bits / 8);
-};
-
-const getBitsPerPixel = (colorType: number, bitDepth: number): number => {
-  switch (colorType) {
-    case 0:
-      return bitDepth;
-    case 2:
-      return 3 * bitDepth;
-    case 3:
-      return bitDepth;
-    case 4:
-      return 2 * bitDepth;
-    case 6:
-      return 4 * bitDepth;
-    default:
-      throw new Error("Invalid color type: " + colorType);
-  }
-};
 
 export type Context = {
   view: DataView;
@@ -287,16 +117,6 @@ export const readSignature = (ctx: Context) => {
     }
   }
   ctx.offset += pngSignature.length;
-};
-
-const readChunk = (ctx: Context): Chunk | null => {
-  const length = ctx.view.getUint32(ctx.offset);
-  ctx.offset += 4;
-  const type = readType(ctx);
-  const data = readData(ctx, length, type);
-  const crc = ctx.view.getUint32(ctx.offset);
-  ctx.offset += 4;
-  return data;
 };
 
 export const readData = (
@@ -552,4 +372,102 @@ const readRGBUntilLength = (ctx: Context, length: number): RGB[] => {
     rgb.push({ r, g, b });
   }
   return rgb;
+};
+
+export const getbytesPerPixel = (
+  colorType: number,
+  bitDepth: number
+): number => {
+  const bits = getBitsPerPixel(colorType, bitDepth);
+  return Math.ceil(bits / 8);
+};
+
+const getBitsPerPixel = (colorType: number, bitDepth: number): number => {
+  switch (colorType) {
+    case 0:
+      return bitDepth;
+    case 2:
+      return 3 * bitDepth;
+    case 3:
+      return bitDepth;
+    case 4:
+      return 2 * bitDepth;
+    case 6:
+      return 4 * bitDepth;
+    default:
+      throw new Error("Invalid color type: " + colorType);
+  }
+};
+
+export const inverseFilter = (
+  filterType: number,
+  bytesPerPixel: number,
+  scanLine: Uint8Array,
+  prevLine: Uint8Array | null
+) => {
+  switch (filterType) {
+    case 0: {
+      break;
+    }
+    case 1: {
+      for (let i = bytesPerPixel; i < scanLine.length; i++) {
+        scanLine[i] = (scanLine[i] + scanLine[i - bytesPerPixel]) % 256;
+      }
+      break;
+    }
+    case 2: {
+      for (let i = 0; i < scanLine.length; i++) {
+        scanLine[i] = (scanLine[i] + prevLine![i]) % 256;
+      }
+      break;
+    }
+    case 3: {
+      for (let i = 0; i < bytesPerPixel; i++) {
+        scanLine[i] = (scanLine[i] + prevLine![i]) / 2;
+      }
+      for (let i = bytesPerPixel; i < scanLine.length; i++) {
+        scanLine[i] =
+          (scanLine[i] + (scanLine[i - bytesPerPixel] + prevLine![i]) / 2) %
+          256;
+      }
+      break;
+    }
+    case 4: {
+      for (let i = 0; i < bytesPerPixel; i++) {
+        scanLine[i] = (scanLine[i] + paeth(0, prevLine![i], 0)) % 256;
+      }
+      for (let i = bytesPerPixel; i < scanLine.length; i++) {
+        scanLine[i] =
+          (scanLine[i] +
+            paeth(
+              scanLine[i - bytesPerPixel],
+              prevLine![i],
+              prevLine![i - bytesPerPixel]
+            )) %
+          256;
+      }
+      break;
+    }
+    default: {
+      throw new Error("not implemented");
+    }
+  }
+};
+
+const paeth = (
+  a: number /* left */,
+  b: number /* up */,
+  c: number /* left-up */
+) => {
+  const p = a + b - c;
+  const pa = Math.abs(p - a); // left distance
+  const pb = Math.abs(p - b); // up distance
+  const pc = Math.abs(p - c); // left+up distance
+  if (pa <= pb && pa <= pc) {
+    return a;
+  }
+  if (pb <= pc) {
+    return b;
+  }
+  return c;
 };

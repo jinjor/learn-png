@@ -1,6 +1,6 @@
 import fs from "fs";
-import { parse } from "./parse";
-import { chunkStream, pixelStream, rowStream, unzippedStream } from "./parse2";
+import { parse } from "./sync";
+import { chunkStream, pixelStream, rowStream, unzippedStream } from "./stream";
 
 const filePath = process.argv[2];
 

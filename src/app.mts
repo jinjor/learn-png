@@ -1,5 +1,5 @@
-import { parse } from "./parse";
-import { pixelStream } from "./parse2";
+import { parse } from "./sync";
+import { pixelStream } from "./stream";
 
 const button1 = document.getElementById("button1")!;
 button1.onclick = async () => {
