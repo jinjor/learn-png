@@ -5,9 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 dependencies:
-  exif-reader:
-    specifier: ^2.0.0
-    version: 2.0.0
   pako:
     specifier: ^2.1.0
     version: 2.1.0
@@ -461,10 +458,6 @@ packages:
     resolution: {integrity: sha512-vbRorB5FUQWvla16U8R/qgaFIya2qGzwDrNmCZuYKrbdSUMG6I1ZCGQRefkRVhuOkIGVne7BQ35DSfo1qvJqFg==}
     engines: {node: '>=0.8.0'}
     dev: true
-
-  /exif-reader@2.0.0:
-    resolution: {integrity: sha512-/c4JW2Kb4/MdmUJyMKTXhNG524q0pCA1DDCEb2aawd9j2i2+bc+mKGKKyO4z2glRTKW93Ks4BWCgmKeEyKiUeA==}
-    dev: false
 
   /exit-hook@1.1.1:
     resolution: {integrity: sha512-MsG3prOVw1WtLXAZbM3KiYtooKR1LvxHh3VHsVtIy0uiUu8usxgB/94DP2HxtD/661lLdB6yzQ09lGJSQr6nkg==}
