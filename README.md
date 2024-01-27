@@ -2,6 +2,7 @@
 
 ## Reference
 
+- https://oss-attachment.cn-hangzhou.oss.aliyun-inc.com/DC-008-Translation-2016-E.pdf
 - https://ftp-osl.osuosl.org/pub/libpng/documents/pngext-1.5.0.html#C.eXIf
 - https://f4.cosmoway.net/photo_exif/
 - https://www.media.mit.edu/pia/Research/deepview/exif.html
