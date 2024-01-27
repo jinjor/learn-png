@@ -57,3 +57,83 @@ export const concatBuffers = (bufs: Uint8Array[]): Uint8Array => {
   }
   return concatBuf;
 };
+
+export const splitIterable = <H, S, T>(
+  stream: AsyncIterable<S>,
+  handle: (
+    emitter: {
+      error: (e: Error) => void;
+      data: (data: T) => void;
+      start: (header: H) => void;
+      end: () => void;
+    },
+    src: S
+  ) => void
+): Promise<{
+  head: H;
+  body: AsyncIterable<T>;
+}> => {
+  return new Promise((resolve, reject) => {
+    let resolveInner: () => void;
+    let promise = new Promise<void>((r) => {
+      resolveInner = r;
+    });
+    let done = false;
+    let results: T[] = [];
+
+    async function* newStream() {
+      while (!done) {
+        await promise;
+        yield* results;
+        results = [];
+      }
+    }
+
+    const eventTarget = new EventTarget();
+    let resolved = false;
+    eventTarget.addEventListener("start", (data: any) => {
+      resolve({
+        head: data.detail,
+        body: newStream(),
+      });
+      resolved = true;
+    });
+    eventTarget.addEventListener("data", (data: any) => {
+      results.push(data.detail);
+      resolveInner();
+      promise = new Promise<void>((r) => {
+        resolveInner = r;
+      });
+    });
+    eventTarget.addEventListener("end", (data: any) => {
+      done = true;
+      resolveInner();
+    });
+    const emitter = {
+      error: (e: Error) => {
+        if (!resolved) {
+          reject(e);
+        }
+        done = true;
+      },
+      data: (data: T) => {
+        eventTarget.dispatchEvent(new CustomEvent("data", { detail: data }));
+      },
+      start: (header: H) => {
+        eventTarget.dispatchEvent(new CustomEvent("start", { detail: header }));
+      },
+      end: () => {
+        done = true;
+      },
+    };
+    (async () => {
+      for await (const src of stream) {
+        handle(emitter, src);
+        if (done) {
+          break;
+        }
+      }
+      eventTarget.dispatchEvent(new CustomEvent("end", { detail: null }));
+    })();
+  });
+};

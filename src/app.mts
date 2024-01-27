@@ -43,10 +43,10 @@ button2.onclick = async () => {
 
   const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 
-  const { header, body } = await requestPixelStream(bufferStream(res.body!));
+  const { head, body } = await requestPixelStream(bufferStream(res.body!));
 
-  canvas.width = header.width;
-  canvas.height = header.height;
+  canvas.width = head.width;
+  canvas.height = head.height;
 
   const ctx = canvas.getContext("2d")!;
 

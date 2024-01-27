@@ -27,8 +27,8 @@ const filePath = process.argv[2];
   const start = Date.now();
   const stream = fs.createReadStream(filePath);
   let i = 0;
-  const { header, body } = await requestPixelStream(stream);
-  console.log(header);
+  const { head, body } = await requestPixelStream(stream);
+  console.log(head);
   for await (const row of body) {
     // console.log(i, row);
     i++;
