@@ -1,5 +1,6 @@
 import pako from "pako";
 import {
+  concatBuffers,
   readBytesUntilLength,
   readStringUntilLength,
   readStringUntilNull,
@@ -60,54 +61,7 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
     const scanLine = line.slice(1);
     const pixelLine: RGBA[] = [];
 
-    // console.log(filterType);
-    switch (filterType) {
-      case 0: {
-        break;
-      }
-      case 1: {
-        for (let i = bytesPerPixel; i < scanLine.length; i++) {
-          scanLine[i] = (scanLine[i] + scanLine[i - bytesPerPixel]) % 256;
-        }
-        break;
-      }
-      case 2: {
-        for (let i = 0; i < scanLine.length; i++) {
-          scanLine[i] = (scanLine[i] + prevLine![i]) % 256;
-        }
-        break;
-      }
-      case 3: {
-        for (let i = 0; i < bytesPerPixel; i++) {
-          scanLine[i] = (scanLine[i] + prevLine![i]) / 2;
-        }
-        for (let i = bytesPerPixel; i < scanLine.length; i++) {
-          scanLine[i] =
-            (scanLine[i] + (scanLine[i - bytesPerPixel] + prevLine![i]) / 2) %
-            256;
-        }
-        break;
-      }
-      case 4: {
-        for (let i = 0; i < bytesPerPixel; i++) {
-          scanLine[i] = (scanLine[i] + paeth(0, prevLine![i], 0)) % 256;
-        }
-        for (let i = bytesPerPixel; i < scanLine.length; i++) {
-          scanLine[i] =
-            (scanLine[i] +
-              paeth(
-                scanLine[i - bytesPerPixel],
-                prevLine![i],
-                prevLine![i - bytesPerPixel]
-              )) %
-            256;
-        }
-        break;
-      }
-      default: {
-        throw new Error("not implemented");
-      }
-    }
+    inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
     prevLine = scanLine;
 
     for (let x = 0; x < ihdr.width; x++) {
@@ -122,6 +76,62 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
   }
   return pixels;
 };
+
+export const inverseFilter = (
+  filterType: number,
+  bytesPerPixel: number,
+  scanLine: Uint8Array,
+  prevLine: Uint8Array | null
+) => {
+  switch (filterType) {
+    case 0: {
+      break;
+    }
+    case 1: {
+      for (let i = bytesPerPixel; i < scanLine.length; i++) {
+        scanLine[i] = (scanLine[i] + scanLine[i - bytesPerPixel]) % 256;
+      }
+      break;
+    }
+    case 2: {
+      for (let i = 0; i < scanLine.length; i++) {
+        scanLine[i] = (scanLine[i] + prevLine![i]) % 256;
+      }
+      break;
+    }
+    case 3: {
+      for (let i = 0; i < bytesPerPixel; i++) {
+        scanLine[i] = (scanLine[i] + prevLine![i]) / 2;
+      }
+      for (let i = bytesPerPixel; i < scanLine.length; i++) {
+        scanLine[i] =
+          (scanLine[i] + (scanLine[i - bytesPerPixel] + prevLine![i]) / 2) %
+          256;
+      }
+      break;
+    }
+    case 4: {
+      for (let i = 0; i < bytesPerPixel; i++) {
+        scanLine[i] = (scanLine[i] + paeth(0, prevLine![i], 0)) % 256;
+      }
+      for (let i = bytesPerPixel; i < scanLine.length; i++) {
+        scanLine[i] =
+          (scanLine[i] +
+            paeth(
+              scanLine[i - bytesPerPixel],
+              prevLine![i],
+              prevLine![i - bytesPerPixel]
+            )) %
+          256;
+      }
+      break;
+    }
+    default: {
+      throw new Error("not implemented");
+    }
+  }
+};
+
 const paeth = (
   a: number /* left */,
   b: number /* up */,
@@ -140,18 +150,10 @@ const paeth = (
   return c;
 };
 
-const concatBuffers = (bufs: Uint8Array[]): Uint8Array => {
-  const totalLength = bufs.reduce((acc, buf) => acc + buf.length, 0);
-  const concatBuf = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const buf of bufs) {
-    concatBuf.set(buf, offset);
-    offset += buf.length;
-  }
-  return concatBuf;
-};
-
-const getbytesPerPixel = (colorType: number, bitDepth: number): number => {
+export const getbytesPerPixel = (
+  colorType: number,
+  bitDepth: number
+): number => {
   const bits = getBitsPerPixel(colorType, bitDepth);
   return Math.ceil(bits / 8);
 };
@@ -277,7 +279,7 @@ export type IDOT = {
   length: number;
 };
 
-const readSignature = (ctx: Context) => {
+export const readSignature = (ctx: Context) => {
   const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
   for (let i = 0; i < pngSignature.length; i++) {
     if (ctx.view.getUint8(i) !== pngSignature[i]) {
@@ -437,17 +439,9 @@ const readTRNS = (ctx: Context, length: number): TRNS => {
   }
 };
 const readICCP = (ctx: Context, length: number): ICCP => {
-  const profileName: string[] = [];
-  for (let i = 0; i < length; i++) {
-    if (i === length - 2) {
-      throw new Error("Invalid ICCP chunk");
-    }
-    const c = ctx.view.getUint8(ctx.offset);
-    ctx.offset += 1;
-    if (c === 0) {
-      break;
-    }
-    profileName.push(String.fromCharCode(c));
+  const profileName = readStringUntilNull(ctx, length - 2);
+  if (profileName == null) {
+    throw new Error("Invalid iCCP chunk");
   }
   const compressionMethod = ctx.view.getUint8(ctx.offset);
   ctx.offset += 1;
@@ -459,7 +453,7 @@ const readICCP = (ctx: Context, length: number): ICCP => {
   }
   return {
     type: "iCCP",
-    profileName: profileName.join(""),
+    profileName,
     compressionMethod,
     compressedProfile,
   };
@@ -482,7 +476,6 @@ const readITXT = (ctx: Context, length: number): ITXT => {
   if (keyword == null) {
     throw new Error("Invalid iTXt chunk");
   }
-
   const compressionFlag = ctx.view.getUint8(ctx.offset);
   ctx.offset += 1;
   const compressionMethod = ctx.view.getUint8(ctx.offset);

@@ -1,5 +1,14 @@
 import pako from "pako";
-import { Chunk, IDAT, IEND, IHDR, PLTE, RGBA, readData } from "./parse";
+import {
+  Chunk,
+  IHDR,
+  RGBA,
+  getbytesPerPixel,
+  inverseFilter,
+  readData,
+  readSignature,
+} from "./parse";
+import { concatBuffers, readStringUntilLength } from "./util";
 
 export async function* pixelStream(stream: AsyncIterable<Uint8Array>) {
   let ihdr: IHDR | undefined;
@@ -22,53 +31,7 @@ export async function* pixelStream(stream: AsyncIterable<Uint8Array>) {
     const pixelLine: RGBA[] = [];
 
     // console.log(filterType);
-    switch (filterType) {
-      case 0: {
-        break;
-      }
-      case 1: {
-        for (let i = bytesPerPixel; i < scanLine.length; i++) {
-          scanLine[i] = (scanLine[i] + scanLine[i - bytesPerPixel]) % 256;
-        }
-        break;
-      }
-      case 2: {
-        for (let i = 0; i < scanLine.length; i++) {
-          scanLine[i] = (scanLine[i] + prevLine![i]) % 256;
-        }
-        break;
-      }
-      case 3: {
-        for (let i = 0; i < bytesPerPixel; i++) {
-          scanLine[i] = (scanLine[i] + prevLine![i]) / 2;
-        }
-        for (let i = bytesPerPixel; i < scanLine.length; i++) {
-          scanLine[i] =
-            (scanLine[i] + (scanLine[i - bytesPerPixel] + prevLine![i]) / 2) %
-            256;
-        }
-        break;
-      }
-      case 4: {
-        for (let i = 0; i < bytesPerPixel; i++) {
-          scanLine[i] = (scanLine[i] + paeth(0, prevLine![i], 0)) % 256;
-        }
-        for (let i = bytesPerPixel; i < scanLine.length; i++) {
-          scanLine[i] =
-            (scanLine[i] +
-              paeth(
-                scanLine[i - bytesPerPixel],
-                prevLine![i],
-                prevLine![i - bytesPerPixel]
-              )) %
-            256;
-        }
-        break;
-      }
-      default: {
-        throw new Error("not implemented");
-      }
-    }
+    inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
     prevLine = scanLine;
 
     for (let x = 0; x < ihdr.width; x++) {
@@ -84,7 +47,7 @@ export async function* pixelStream(stream: AsyncIterable<Uint8Array>) {
 }
 
 export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
-  let tmp = new Uint8Array(0);
+  let buffer = new Uint8Array(0);
 
   let ihdr: IHDR | undefined;
   for await (const chunk of unzippedStream(stream)) {
@@ -97,7 +60,7 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
       if (ihdr == null) {
         throw new Error("IHDR is not defined");
       }
-      let buffer = concatBuffers([tmp, chunk.data]);
+      buffer = concatBuffers([buffer, chunk.data]);
       const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
       const width = ihdr.width;
       // const height = ihdr.height;
@@ -110,7 +73,6 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
         } as const;
         buffer = buffer.slice(bytesPerRow);
       }
-      tmp = buffer;
     }
   }
 }
@@ -137,8 +99,15 @@ export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
   };
   (async () => {
     // TODO: error handling
-    for await (const chunk of chunkStream(stream)) {
-      if (chunk === null) {
+    for await (const { type, data: buffer } of chunkStream(stream)) {
+      const view = new DataView(buffer);
+      const length = buffer.byteLength;
+      const ctx = {
+        view,
+        offset: 0,
+      };
+      const chunk = readData(ctx, length, type);
+      if (chunk == null) {
         continue;
       }
       if (chunk.type === "IDAT") {
@@ -156,107 +125,42 @@ export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
 }
 
 export async function* chunkStream(stream: AsyncIterable<Uint8Array>) {
-  let tmp = new Uint8Array(0);
+  let buffer = new Uint8Array(0);
   let sigRead = false;
   for await (const chunk of stream) {
-    let buffer = concatBuffers([tmp, chunk]);
+    buffer = concatBuffers([buffer, chunk]);
     while (true) {
       const view = new DataView(buffer.buffer);
+      const ctx = {
+        view,
+        offset: 0,
+      };
       if (!sigRead) {
-        const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
-        for (let i = 0; i < pngSignature.length; i++) {
-          if (view.getUint8(i) !== pngSignature[i]) {
-            throw new Error("Invalid PNG signature");
-          }
+        if (buffer.length < 8) {
+          break;
         }
+        readSignature(ctx);
         sigRead = true;
-        buffer = buffer.slice(8);
+        buffer = buffer.slice(ctx.offset);
         continue;
       }
-
       if (buffer.length < 12) {
         break;
       }
       const length = view.getUint32(0);
+      ctx.offset += 4;
       const chunkLength = length + 12;
       if (buffer.length < chunkLength) {
         break;
       }
-      const type = _readStringUntilLength(view, 4, 4);
-      const ctx = {
-        view,
-        offset: 8,
-      };
-      const data = readData(ctx, length, type);
+      const type = readStringUntilLength(ctx, 4);
+      const data = ctx.view.buffer.slice(
+        ctx.view.byteOffset + ctx.offset,
+        ctx.view.byteOffset + ctx.offset + length
+      );
       const crc = ctx.view.getUint32(ctx.offset);
-
       buffer = buffer.slice(chunkLength);
-      yield data;
+      yield { type, data };
     }
-    tmp = buffer;
   }
 }
-
-const paeth = (
-  a: number /* left */,
-  b: number /* up */,
-  c: number /* left-up */
-) => {
-  const p = a + b - c;
-  const pa = Math.abs(p - a); // left distance
-  const pb = Math.abs(p - b); // up distance
-  const pc = Math.abs(p - c); // left+up distance
-  if (pa <= pb && pa <= pc) {
-    return a;
-  }
-  if (pb <= pc) {
-    return b;
-  }
-  return c;
-};
-
-const concatBuffers = (bufs: Uint8Array[]): Uint8Array => {
-  const totalLength = bufs.reduce((acc, buf) => acc + buf.length, 0);
-  const concatBuf = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const buf of bufs) {
-    concatBuf.set(buf, offset);
-    offset += buf.length;
-  }
-  return concatBuf;
-};
-
-const getbytesPerPixel = (colorType: number, bitDepth: number): number => {
-  const bits = getBitsPerPixel(colorType, bitDepth);
-  return Math.ceil(bits / 8);
-};
-
-const getBitsPerPixel = (colorType: number, bitDepth: number): number => {
-  switch (colorType) {
-    case 0:
-      return bitDepth;
-    case 2:
-      return 3 * bitDepth;
-    case 3:
-      return bitDepth;
-    case 4:
-      return 2 * bitDepth;
-    case 6:
-      return 4 * bitDepth;
-    default:
-      throw new Error("Invalid color type: " + colorType);
-  }
-};
-
-const _readStringUntilLength = (
-  view: DataView,
-  offset: number,
-  length: number
-): string => {
-  const str: string[] = [];
-  for (let i = offset; i < offset + length; i++) {
-    const c = view.getUint8(i);
-    str.push(String.fromCharCode(c));
-  }
-  return str.join("");
-};
