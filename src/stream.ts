@@ -10,40 +10,91 @@ import {
 } from "./parse";
 import { concatBuffers, readStringUntilLength } from "./util";
 
-export async function* pixelStream(stream: AsyncIterable<Uint8Array>) {
-  let ihdr: IHDR | undefined;
-  let prevLine: Uint8Array | null = null;
-  for await (const chunk of rowStream(stream)) {
-    if (chunk.type === "IHDR") {
-      ihdr = chunk;
-      continue;
-    }
-    if (chunk.type !== "row") {
-      continue;
-    }
-    if (ihdr == null) {
-      throw new Error("IHDR is not defined");
-    }
-    const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
-    const line = chunk.data;
-    const filterType = line[0];
-    const scanLine = line.slice(1);
-    const pixelLine: RGBA[] = [];
+export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
+  header: IHDR;
+  body: AsyncGenerator<RGBA[], void, unknown>;
+}> {
+  return new Promise((resolve, reject) => {
+    let resolveInner: () => void;
+    let promise = new Promise<void>((r) => {
+      resolveInner = r;
+    });
+    let done = false;
+    let results: RGBA[][] = [];
 
-    // console.log(filterType);
-    inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
-    prevLine = scanLine;
-
-    for (let x = 0; x < ihdr.width; x++) {
-      const offset = x * bytesPerPixel;
-      const r = scanLine[offset];
-      const g = scanLine[offset + 1];
-      const b = scanLine[offset + 2];
-      const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
-      pixelLine.push({ r, g, b, a });
+    async function* pixelStream() {
+      while (!done) {
+        await promise;
+        yield* results;
+        results = [];
+      }
     }
-    yield pixelLine;
-  }
+
+    const eventTarget = new EventTarget();
+    eventTarget.addEventListener("start", (data: any) => {
+      resolve({
+        header: data.detail,
+        body: pixelStream(),
+      });
+    });
+    eventTarget.addEventListener("data", (data: any) => {
+      results.push(data.detail);
+      resolveInner();
+      promise = new Promise<void>((r) => {
+        resolveInner = r;
+      });
+    });
+    eventTarget.addEventListener("end", (data: any) => {
+      done = true;
+      resolveInner();
+    });
+
+    (async () => {
+      let foundRow = false;
+      let ihdr: IHDR | undefined;
+      let prevLine: Uint8Array | null = null;
+      for await (const chunk of rowStream(stream)) {
+        if (chunk.type === "IHDR") {
+          ihdr = chunk;
+          continue;
+        }
+        if (chunk.type === "IEND") {
+          break;
+        }
+        if (chunk.type !== "row") {
+          continue;
+        }
+        if (ihdr == null) {
+          throw new Error("IHDR is not defined");
+        }
+        if (!foundRow) {
+          foundRow = true;
+          eventTarget.dispatchEvent(new CustomEvent("start", { detail: ihdr }));
+        }
+        const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
+        const line = chunk.data;
+        const filterType = line[0];
+        const scanLine = line.slice(1);
+        const pixelLine: RGBA[] = [];
+
+        inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
+        prevLine = scanLine;
+
+        for (let x = 0; x < ihdr.width; x++) {
+          const offset = x * bytesPerPixel;
+          const r = scanLine[offset];
+          const g = scanLine[offset + 1];
+          const b = scanLine[offset + 2];
+          const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
+          pixelLine.push({ r, g, b, a });
+        }
+        eventTarget.dispatchEvent(
+          new CustomEvent("data", { detail: pixelLine })
+        );
+      }
+      eventTarget.dispatchEvent(new CustomEvent("end", { detail: null }));
+    })();
+  });
 }
 
 export async function* rowStream(stream: AsyncIterable<Uint8Array>) {

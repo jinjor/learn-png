@@ -1,5 +1,5 @@
 import { parse } from "./sync";
-import { pixelStream } from "./stream";
+import { requestPixelStream } from "./stream";
 
 const button1 = document.getElementById("button1")!;
 button1.onclick = async () => {
@@ -43,17 +43,15 @@ button2.onclick = async () => {
 
   const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 
-  // TODO
-  // canvas.width = 640;
-  // canvas.height = 384;
+  const { header, body } = await requestPixelStream(bufferStream(res.body!));
 
-  canvas.width = 2620;
-  canvas.height = 1856;
+  canvas.width = header.width;
+  canvas.height = header.height;
 
   const ctx = canvas.getContext("2d")!;
 
   let y = 0;
-  for await (const row of pixelStream(bufferStream(res.body!))) {
+  for await (const row of body) {
     for (let x = 0; x < row.length; x++) {
       const pixel = row[x];
       const color = `rgb(${pixel.r}, ${pixel.g}, ${pixel.b})`;
