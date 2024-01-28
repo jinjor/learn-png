@@ -8,7 +8,8 @@ import {
   readData,
   readSignature,
 } from "./parse";
-import { concatBuffers, readStringUntilLength, splitIterable } from "./util";
+import { concatBuffers, splitIterable } from "./util";
+import { Reader } from "./reader";
 
 export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
   head: IHDR;
@@ -111,13 +112,9 @@ export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
   (async () => {
     // TODO: error handling
     for await (const { type, data: buffer } of chunkStream(stream)) {
-      const view = new DataView(buffer);
+      const r = new Reader(buffer);
       const length = buffer.byteLength;
-      const ctx = {
-        view,
-        offset: 0,
-      };
-      const chunk = readData(ctx, length, type);
+      const chunk = readData({}, r, length, type);
       if (chunk == null) {
         continue;
       }
@@ -141,35 +138,27 @@ export async function* chunkStream(stream: AsyncIterable<Uint8Array>) {
   for await (const chunk of stream) {
     buffer = concatBuffers([buffer, chunk]);
     while (true) {
-      const view = new DataView(buffer.buffer);
-      const ctx = {
-        view,
-        offset: 0,
-      };
+      const r = new Reader(buffer.buffer);
       if (!sigRead) {
         if (buffer.length < 8) {
           break;
         }
-        readSignature(ctx);
+        readSignature(r);
         sigRead = true;
-        buffer = buffer.slice(ctx.offset);
+        buffer = buffer.slice(r.getOffset());
         continue;
       }
       if (buffer.length < 12) {
         break;
       }
-      const length = view.getUint32(0);
-      ctx.offset += 4;
+      const length = r.getUint32();
       const chunkLength = length + 12;
       if (buffer.length < chunkLength) {
         break;
       }
-      const type = readStringUntilLength(ctx, 4);
-      const data = ctx.view.buffer.slice(
-        ctx.view.byteOffset + ctx.offset,
-        ctx.view.byteOffset + ctx.offset + length
-      );
-      const crc = ctx.view.getUint32(ctx.offset);
+      const type = r.getString(4);
+      const data = r.getArrayBuffer(length);
+      const crc = r.getUint32();
       buffer = buffer.slice(chunkLength);
       yield { type, data };
     }
