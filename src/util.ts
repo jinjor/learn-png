@@ -74,7 +74,7 @@ export const splitIterable = <H, S, T>(
   body: AsyncIterable<T>;
 }> => {
   return new Promise((resolve, reject) => {
-    let resolveInner: () => void;
+    let resolveInner: (() => void) | undefined;
     let promise = new Promise<void>((r) => {
       resolveInner = r;
     });
@@ -88,27 +88,7 @@ export const splitIterable = <H, S, T>(
         results = [];
       }
     }
-
-    const eventTarget = new EventTarget();
     let resolved = false;
-    eventTarget.addEventListener("start", (data: any) => {
-      resolve({
-        head: data.detail,
-        body: newStream(),
-      });
-      resolved = true;
-    });
-    eventTarget.addEventListener("data", (data: any) => {
-      results.push(data.detail);
-      resolveInner();
-      promise = new Promise<void>((r) => {
-        resolveInner = r;
-      });
-    });
-    eventTarget.addEventListener("end", (data: any) => {
-      done = true;
-      resolveInner();
-    });
     const emitter = {
       error: (e: Error) => {
         if (!resolved) {
@@ -117,10 +97,18 @@ export const splitIterable = <H, S, T>(
         done = true;
       },
       data: (data: T) => {
-        eventTarget.dispatchEvent(new CustomEvent("data", { detail: data }));
+        results.push(data);
+        resolveInner?.();
+        promise = new Promise<void>((r) => {
+          resolveInner = r;
+        });
       },
-      start: (header: H) => {
-        eventTarget.dispatchEvent(new CustomEvent("start", { detail: header }));
+      start: (head: H) => {
+        resolve({
+          head: head,
+          body: newStream(),
+        });
+        resolved = true;
       },
       end: () => {
         done = true;
@@ -133,7 +121,8 @@ export const splitIterable = <H, S, T>(
           break;
         }
       }
-      eventTarget.dispatchEvent(new CustomEvent("end", { detail: null }));
+      done = true;
+      resolveInner?.();
     })();
   });
 };
