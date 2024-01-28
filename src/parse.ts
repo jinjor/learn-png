@@ -1,180 +1,18 @@
-import pako from "pako";
-const unzip = pako.inflate;
+import {
+  readBytesUntilLength,
+  readStringUntilLength,
+  readStringUntilNull,
+} from "./util";
+import { readExifData } from "./exif";
 
-export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
-  const view = new DataView(buffer);
-  const ctx = { view, offset: 0 } as Context;
-  readSignature(ctx);
-  const chunks: (Chunk | null)[] = [];
-  while (true) {
-    const chunk = readChunk(ctx);
-    chunks.push(chunk);
-    if (chunk?.type === "IEND") {
-      break;
-    }
-  }
-  for (const chunk of chunks) {
-    if (chunk?.type === "IDAT") {
-      // skip
-    } else {
-      console.log(chunk);
-    }
-  }
-  const ihdr = ctx.ihdr;
-  if (ihdr == null) {
-    throw new Error("IHDR is not defined");
-  }
-
-  const zipped = concatBuffers(
-    chunks.flatMap((chunk) => {
-      if (chunk?.type === "IDAT") {
-        return chunk.data;
-      }
-      return [];
-    })
-  );
-  const unzipped = await unzip(zipped);
-  // console.log(zipped.length, unzipped.length);
-
-  const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
-  if (ihdr.interlaceMethod !== 0) {
-    throw new Error("Interlace is not supported");
-  }
-  const bytesPerLine = bytesPerPixel * ihdr.width + 1;
-  const pixels: RGBA[][] = [];
-
-  let prevLine: Uint8Array | null = null;
-  for (let y = 0; y < ihdr.height; y++) {
-    const line = new Uint8Array(
-      unzipped.buffer,
-      y * bytesPerLine,
-      bytesPerLine
-    );
-    const filterType = line[0];
-    const scanLine = line.slice(1);
-    const pixelLine: RGBA[] = [];
-
-    // console.log(filterType);
-    switch (filterType) {
-      case 0: {
-        break;
-      }
-      case 1: {
-        for (let i = bytesPerPixel; i < scanLine.length; i++) {
-          scanLine[i] = (scanLine[i] + scanLine[i - bytesPerPixel]) % 256;
-        }
-        break;
-      }
-      case 2: {
-        for (let i = 0; i < scanLine.length; i++) {
-          scanLine[i] = (scanLine[i] + prevLine![i]) % 256;
-        }
-        break;
-      }
-      case 3: {
-        for (let i = 0; i < bytesPerPixel; i++) {
-          scanLine[i] = (scanLine[i] + prevLine![i]) / 2;
-        }
-        for (let i = bytesPerPixel; i < scanLine.length; i++) {
-          scanLine[i] =
-            (scanLine[i] + (scanLine[i - bytesPerPixel] + prevLine![i]) / 2) %
-            256;
-        }
-        break;
-      }
-      case 4: {
-        for (let i = 0; i < bytesPerPixel; i++) {
-          scanLine[i] = (scanLine[i] + paeth(0, prevLine![i], 0)) % 256;
-        }
-        for (let i = bytesPerPixel; i < scanLine.length; i++) {
-          scanLine[i] =
-            (scanLine[i] +
-              paeth(
-                scanLine[i - bytesPerPixel],
-                prevLine![i],
-                prevLine![i - bytesPerPixel]
-              )) %
-            256;
-        }
-        break;
-      }
-      default: {
-        throw new Error("not implemented");
-      }
-    }
-    prevLine = scanLine;
-
-    for (let x = 0; x < ihdr.width; x++) {
-      const offset = x * bytesPerPixel;
-      const r = scanLine[offset];
-      const g = scanLine[offset + 1];
-      const b = scanLine[offset + 2];
-      const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
-      pixelLine.push({ r, g, b, a });
-    }
-    pixels.push(pixelLine);
-  }
-  return pixels;
-};
-const paeth = (
-  a: number /* left */,
-  b: number /* up */,
-  c: number /* left-up */
-) => {
-  const p = a + b - c;
-  const pa = Math.abs(p - a); // left distance
-  const pb = Math.abs(p - b); // up distance
-  const pc = Math.abs(p - c); // left+up distance
-  if (pa <= pb && pa <= pc) {
-    return a;
-  }
-  if (pb <= pc) {
-    return b;
-  }
-  return c;
-};
-
-const concatBuffers = (bufs: Uint8Array[]): Uint8Array => {
-  const totalLength = bufs.reduce((acc, buf) => acc + buf.length, 0);
-  const concatBuf = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const buf of bufs) {
-    concatBuf.set(buf, offset);
-    offset += buf.length;
-  }
-  return concatBuf;
-};
-
-const getbytesPerPixel = (colorType: number, bitDepth: number): number => {
-  const bits = getBitsPerPixel(colorType, bitDepth);
-  return Math.ceil(bits / 8);
-};
-
-const getBitsPerPixel = (colorType: number, bitDepth: number): number => {
-  switch (colorType) {
-    case 0:
-      return bitDepth;
-    case 2:
-      return 3 * bitDepth;
-    case 3:
-      return bitDepth;
-    case 4:
-      return 2 * bitDepth;
-    case 6:
-      return 4 * bitDepth;
-    default:
-      throw new Error("Invalid color type: " + colorType);
-  }
-};
-
-type Context = {
+export type Context = {
   view: DataView;
   offset: number;
   ihdr?: IHDR;
   plte?: PLTE;
 };
 
-type Chunk =
+export type Chunk =
   | IHDR
   | PLTE
   | IDAT
@@ -187,7 +25,7 @@ type Chunk =
   | EXIF
   | IDOT;
 
-type IHDR = {
+export type IHDR = {
   type: "IHDR";
   width: number;
   height: number;
@@ -197,33 +35,33 @@ type IHDR = {
   filterMethod: number;
   interlaceMethod: number;
 };
-type PLTE = {
+export type PLTE = {
   type: "PLTE";
   palette: RGB[];
 };
-type IDAT = {
+export type IDAT = {
   type: "IDAT";
   data: Uint8Array;
 };
-type IEND = {
+export type IEND = {
   type: "IEND";
 };
-type RGB = {
+export type RGB = {
   r: number;
   g: number;
   b: number;
 };
-type RGBA = {
+export type RGBA = {
   r: number;
   g: number;
   b: number;
   a: number;
 };
-type TRNS = {
+export type TRNS = {
   type: "tRNS";
   alphas: Alphas;
 };
-type Alphas =
+export type Alphas =
   | {
       type: "indexed";
       values: number[];
@@ -236,18 +74,18 @@ type Alphas =
       type: "rgb";
       values: RGB[];
     };
-type ICCP = {
+export type ICCP = {
   type: "iCCP";
   profileName: string;
   compressionMethod: number;
   compressedProfile: number[];
 };
-type TEXT = {
+export type TEXT = {
   type: "tEXt";
   keyword: string;
   text: string;
 };
-type ITXT = {
+export type ITXT = {
   type: "iTXt";
   keyword: string;
   compressionFlag: number;
@@ -256,22 +94,22 @@ type ITXT = {
   translatedKeyword: string;
   text: string;
 };
-type PHYS = {
+export type PHYS = {
   type: "pHYs";
   pixelsPerUnitXAxis: number;
   pixelsPerUnitYAxis: number;
   unitSpecifier: number;
 };
-type EXIF = {
+export type EXIF = {
   type: "eXIf";
   data: Record<string | number, any>;
 };
-type IDOT = {
+export type IDOT = {
   type: "iDOT";
   length: number;
 };
 
-const readSignature = (ctx: Context) => {
+export const readSignature = (ctx: Context) => {
   const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
   for (let i = 0; i < pngSignature.length; i++) {
     if (ctx.view.getUint8(i) !== pngSignature[i]) {
@@ -281,16 +119,11 @@ const readSignature = (ctx: Context) => {
   ctx.offset += pngSignature.length;
 };
 
-const readChunk = (ctx: Context): Chunk | null => {
-  const length = ctx.view.getUint32(ctx.offset);
-  ctx.offset += 4;
-  const type = readType(ctx);
-  const data = readData(ctx, length, type);
-  const crc = ctx.view.getUint32(ctx.offset);
-  ctx.offset += 4;
-  return data;
-};
-const readData = (ctx: Context, length: number, type: string): Chunk | null => {
+export const readData = (
+  ctx: Context,
+  length: number,
+  type: string
+): Chunk | null => {
   switch (type) {
     case "IHDR":
       return readIHDR(ctx);
@@ -321,7 +154,7 @@ const readData = (ctx: Context, length: number, type: string): Chunk | null => {
   }
 };
 
-const readType = (ctx: Context): string => {
+export const readType = (ctx: Context): string => {
   const type: string[] = [];
   for (let i = 0; i < 4; i++) {
     type.push(String.fromCharCode(ctx.view.getUint8(ctx.offset + i)));
@@ -426,17 +259,9 @@ const readTRNS = (ctx: Context, length: number): TRNS => {
   }
 };
 const readICCP = (ctx: Context, length: number): ICCP => {
-  const profileName: string[] = [];
-  for (let i = 0; i < length; i++) {
-    if (i === length - 2) {
-      throw new Error("Invalid ICCP chunk");
-    }
-    const c = ctx.view.getUint8(ctx.offset);
-    ctx.offset += 1;
-    if (c === 0) {
-      break;
-    }
-    profileName.push(String.fromCharCode(c));
+  const profileName = readStringUntilNull(ctx, length - 2);
+  if (profileName == null) {
+    throw new Error("Invalid iCCP chunk");
   }
   const compressionMethod = ctx.view.getUint8(ctx.offset);
   ctx.offset += 1;
@@ -448,7 +273,7 @@ const readICCP = (ctx: Context, length: number): ICCP => {
   }
   return {
     type: "iCCP",
-    profileName: profileName.join(""),
+    profileName,
     compressionMethod,
     compressedProfile,
   };
@@ -471,7 +296,6 @@ const readITXT = (ctx: Context, length: number): ITXT => {
   if (keyword == null) {
     throw new Error("Invalid iTXt chunk");
   }
-
   const compressionFlag = ctx.view.getUint8(ctx.offset);
   ctx.offset += 1;
   const compressionMethod = ctx.view.getUint8(ctx.offset);
@@ -536,29 +360,6 @@ const readIDOT = (ctx: Context, length: number): IDOT => {
   };
 };
 
-// Utility functions
-
-const readStringUntilNull = (ctx: Context, limit: number): string | null => {
-  const str: string[] = [];
-  for (let i = 0; i < limit; i++) {
-    const c = ctx.view.getUint8(ctx.offset);
-    ctx.offset += 1;
-    if (c === 0) {
-      return str.join("");
-    }
-    str.push(String.fromCharCode(c));
-  }
-  return null;
-};
-const readStringUntilLength = (ctx: Context, length: number): string => {
-  const str: string[] = [];
-  for (let i = 0; i < length; i++) {
-    const c = ctx.view.getUint8(ctx.offset);
-    ctx.offset += 1;
-    str.push(String.fromCharCode(c));
-  }
-  return str.join("");
-};
 const readRGBUntilLength = (ctx: Context, length: number): RGB[] => {
   const rgb: RGB[] = [];
   for (let i = 0; i < length; i += 3) {
@@ -572,183 +373,101 @@ const readRGBUntilLength = (ctx: Context, length: number): RGB[] => {
   }
   return rgb;
 };
-const readBytesUntilLength = (ctx: Context, length: number): number[] => {
-  const bytes: number[] = [];
-  for (let i = 0; i < length; i++) {
-    const b = ctx.view.getUint8(ctx.offset);
-    ctx.offset += 1;
-    bytes.push(b);
-  }
-  return bytes;
+
+export const getbytesPerPixel = (
+  colorType: number,
+  bitDepth: number
+): number => {
+  const bits = getBitsPerPixel(colorType, bitDepth);
+  return Math.ceil(bits / 8);
 };
 
-// ----- EXIF -----
-
-const readExifData = (ctx: Context) => {
-  const mmii = readStringUntilLength(ctx, 2);
-  const littleEndian = mmii === "II";
-  const n = ctx.view.getUint16(ctx.offset, littleEndian);
-  if (n !== 42) {
-    throw new Error("Invalid EXIF data");
-  }
-  ctx.offset += 2;
-  const ifd0thOffset = ctx.view.getUint32(ctx.offset, littleEndian);
-  ctx.offset += 4;
-  ctx.offset = ifd0thOffset;
-
-  const fields: Record<string | number, any> = readIFD(ctx, littleEndian);
-  for (let i = 0; i < fields.length; i++) {
-    const [tag, value] = fields[i];
-    if (tag === 34665 || tag === 34853 || tag === 40965) {
-      ctx.offset = value;
-      fields.push(...readIFD(ctx, littleEndian));
-      fields[i][0] = 0;
-      continue;
-    }
-    fields[i][0] = nameOfExifTag(tag);
-  }
-  return Object.fromEntries(fields.filter(([tag]) => tag !== 0));
-};
-
-const nameOfExifTag = (tag: number) => {
-  switch (tag) {
-    case 282:
-      return "XResolution";
-    case 283:
-      return "YResolution";
-    case 296:
-      return "ResolutionUnit";
-    case 37510:
-      return "UserComment";
-    case 40962:
-      return "PixelXDimension";
-    case 40963:
-      return "PixelYDimension";
-    default:
-      return tag;
-  }
-};
-
-const readIFD = (ctx: Context, littleEndian: boolean) => {
-  const fields: [number, any][] = [];
-  const numFields = ctx.view.getUint16(ctx.offset, littleEndian);
-  ctx.offset += 2;
-  for (let i = 0; i < numFields; i++) {
-    const tag = ctx.view.getUint16(ctx.offset, littleEndian);
-    ctx.offset += 2;
-    const type = ctx.view.getUint16(ctx.offset, littleEndian);
-    ctx.offset += 2;
-    const count = ctx.view.getUint32(ctx.offset, littleEndian);
-    ctx.offset += 4;
-    const sizeOfType = sizeOfExifType(type);
-    if (sizeOfType == null || sizeOfType * count > 4) {
-      const valueOffset = ctx.view.getUint32(ctx.offset, littleEndian);
-      ctx.offset += 4;
-      const value = readExifValue(
-        ctx.view,
-        valueOffset,
-        tag,
-        type,
-        count,
-        littleEndian
-      );
-      fields.push([tag, value]);
-    } else {
-      const value = readExifValue(
-        ctx.view,
-        ctx.offset,
-        tag,
-        type,
-        count,
-        littleEndian
-      );
-      ctx.offset += 4;
-      fields.push([tag, value]);
-    }
-  }
-  return fields;
-};
-
-const sizeOfExifType = (type: number) => {
-  switch (type) {
-    case 1:
-      return 1;
+const getBitsPerPixel = (colorType: number, bitDepth: number): number => {
+  switch (colorType) {
+    case 0:
+      return bitDepth;
+    case 2:
+      return 3 * bitDepth;
     case 3:
-      return 2;
+      return bitDepth;
     case 4:
-      return 4;
-    case 5:
-      return 8;
-    case 9:
-      return 4;
-    case 10:
-      return 8;
+      return 2 * bitDepth;
+    case 6:
+      return 4 * bitDepth;
     default:
-      return null;
+      throw new Error("Invalid color type: " + colorType);
   }
 };
 
-const readExifValue = (
-  view: DataView,
-  offset: number,
-  tag: number,
-  type: number,
-  count: number,
-  littleEndian: boolean
+export const inverseFilter = (
+  filterType: number,
+  bytesPerPixel: number,
+  scanLine: Uint8Array,
+  prevLine: Uint8Array | null
 ) => {
-  switch (type) {
+  switch (filterType) {
+    case 0: {
+      break;
+    }
     case 1: {
-      return view.getUint8(offset);
+      for (let i = bytesPerPixel; i < scanLine.length; i++) {
+        scanLine[i] = (scanLine[i] + scanLine[i - bytesPerPixel]) % 256;
+      }
+      break;
     }
     case 2: {
-      return readStringUntilNull({ view, offset }, Infinity);
+      for (let i = 0; i < scanLine.length; i++) {
+        scanLine[i] = (scanLine[i] + prevLine![i]) % 256;
+      }
+      break;
     }
     case 3: {
-      return view.getUint16(offset, littleEndian);
+      for (let i = 0; i < bytesPerPixel; i++) {
+        scanLine[i] = (scanLine[i] + prevLine![i]) / 2;
+      }
+      for (let i = bytesPerPixel; i < scanLine.length; i++) {
+        scanLine[i] =
+          (scanLine[i] + (scanLine[i - bytesPerPixel] + prevLine![i]) / 2) %
+          256;
+      }
+      break;
     }
     case 4: {
-      return view.getUint32(offset, littleEndian);
-    }
-    case 5: {
-      return (
-        view.getUint32(offset, littleEndian) /
-        view.getUint32(offset + 4, littleEndian)
-      );
-    }
-    case 7: {
-      switch (tag) {
-        case 37510: {
-          const code = readStringUntilNull({ view, offset }, 8);
-          if (code !== "ASCII") {
-            // throw new Error("Not implemented: " + code);
-            break;
-          }
-          const comment = readStringUntilLength(
-            { view, offset: offset + 8 },
-            count - 8
-          );
-          return comment;
-        }
+      for (let i = 0; i < bytesPerPixel; i++) {
+        scanLine[i] = (scanLine[i] + paeth(0, prevLine![i], 0)) % 256;
       }
-      return view.buffer.slice(offset, offset + count);
-    }
-    case 9: {
-      return (
-        view.getInt32(offset, littleEndian) /
-        view.getInt32(offset + 4, littleEndian)
-      );
-    }
-    case 10: {
-      return view.getInt32(offset, littleEndian);
-    }
-    case 11: {
-      return (
-        view.getInt32(offset, littleEndian) /
-        view.getInt32(offset + 4, littleEndian)
-      );
+      for (let i = bytesPerPixel; i < scanLine.length; i++) {
+        scanLine[i] =
+          (scanLine[i] +
+            paeth(
+              scanLine[i - bytesPerPixel],
+              prevLine![i],
+              prevLine![i - bytesPerPixel]
+            )) %
+          256;
+      }
+      break;
     }
     default: {
-      throw new Error("Invalid EXIF type: " + type);
+      throw new Error("not implemented");
     }
   }
+};
+
+const paeth = (
+  a: number /* left */,
+  b: number /* up */,
+  c: number /* left-up */
+) => {
+  const p = a + b - c;
+  const pa = Math.abs(p - a); // left distance
+  const pb = Math.abs(p - b); // up distance
+  const pc = Math.abs(p - c); // left+up distance
+  if (pa <= pb && pa <= pc) {
+    return a;
+  }
+  if (pb <= pc) {
+    return b;
+  }
+  return c;
 };
