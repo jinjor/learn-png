@@ -4,10 +4,9 @@ import {
   readStringUntilNull,
 } from "./util";
 import { readExifData } from "./exif";
+import { Reader } from "./reader";
 
 export type Context = {
-  view: DataView;
-  offset: number;
   ihdr?: IHDR;
   plte?: PLTE;
 };
@@ -109,75 +108,59 @@ export type IDOT = {
   length: number;
 };
 
-export const readSignature = (ctx: Context) => {
+export const readSignature = (r: Reader) => {
   const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
   for (let i = 0; i < pngSignature.length; i++) {
-    if (ctx.view.getUint8(i) !== pngSignature[i]) {
+    if (r.getUint8() !== pngSignature[i]) {
       throw new Error("Invalid PNG signature");
     }
   }
-  ctx.offset += pngSignature.length;
 };
 
 export const readData = (
   ctx: Context,
+  r: Reader,
   length: number,
   type: string
 ): Chunk | null => {
   switch (type) {
     case "IHDR":
-      return readIHDR(ctx);
+      return readIHDR(ctx, r);
     case "PLTE":
-      return readPLTE(ctx, length);
+      return readPLTE(ctx, r, length);
     case "IDAT":
-      return readIDAT(ctx, length);
+      return readIDAT(r, length);
     case "IEND":
-      return readIEND(ctx);
+      return readIEND();
     case "tRNS":
-      return readTRNS(ctx, length);
+      return readTRNS(ctx, r, length);
     case "iCCP":
-      return readICCP(ctx, length);
+      return readICCP(r, length);
     case "tEXt":
-      return readTEXT(ctx, length);
+      return readTEXT(r, length);
     case "iTXt":
-      return readITXT(ctx, length);
+      return readITXT(r, length);
     case "pHYs":
-      return readPHYS(ctx, length);
+      return readPHYS(r, length);
     case "eXIf":
-      return readEXIF(ctx, length);
+      return readEXIF(r, length);
     case "iDOT":
-      return readIDOT(ctx, length);
+      return readIDOT(r, length);
     default:
-      console.log(type);
-      ctx.offset += length;
+      console.log(`Unknown chunk type: ${type} ${length} bytes`);
+      r.getArrayBuffer(length);
       return null;
   }
 };
 
-export const readType = (ctx: Context): string => {
-  const type: string[] = [];
-  for (let i = 0; i < 4; i++) {
-    type.push(String.fromCharCode(ctx.view.getUint8(ctx.offset + i)));
-  }
-  ctx.offset += 4;
-  return type.join("");
-};
-
-const readIHDR = (ctx: Context): IHDR => {
-  const width = ctx.view.getUint32(ctx.offset);
-  ctx.offset += 4;
-  const height = ctx.view.getUint32(ctx.offset);
-  ctx.offset += 4;
-  const bitDepth = ctx.view.getUint8(ctx.offset);
-  ctx.offset += 1;
-  const colorType = ctx.view.getUint8(ctx.offset);
-  ctx.offset += 1;
-  const compressionMethod = ctx.view.getUint8(ctx.offset);
-  ctx.offset += 1;
-  const filterMethod = ctx.view.getUint8(ctx.offset);
-  ctx.offset += 1;
-  const interlaceMethod = ctx.view.getUint8(ctx.offset);
-  ctx.offset += 1;
+const readIHDR = (ctx: Context, r: Reader): IHDR => {
+  const width = r.getUint32();
+  const height = r.getUint32();
+  const bitDepth = r.getUint8();
+  const colorType = r.getUint8();
+  const compressionMethod = r.getUint8();
+  const filterMethod = r.getUint8();
+  const interlaceMethod = r.getUint8();
   const ihdr = {
     type: "IHDR",
     width,
@@ -192,37 +175,38 @@ const readIHDR = (ctx: Context): IHDR => {
   return ihdr;
 };
 
-const readPLTE = (ctx: Context, length: number): PLTE => {
-  const palette = readRGBUntilLength(ctx, length);
-  return {
+const readPLTE = (ctx: Context, r: Reader, length: number): PLTE => {
+  const palette = readRGBUntilLength(r, length);
+  const plte = {
     type: "PLTE",
     palette,
-  };
+  } as const;
+  ctx.plte = plte;
+  return plte;
 };
 
-const readIDAT = (ctx: Context, length: number): IDAT => {
-  const data = new Uint8Array(ctx.view.buffer, ctx.offset, length);
-  ctx.offset += length;
+const readIDAT = (r: Reader, length: number): IDAT => {
+  const data = new Uint8Array(r.getArrayBuffer(length));
   return {
     type: "IDAT",
     data,
   };
 };
 
-const readIEND = (ctx: Context): IEND => {
+const readIEND = (): IEND => {
   return {
     type: "IEND",
   };
 };
 
-const readTRNS = (ctx: Context, length: number): TRNS => {
+const readTRNS = (ctx: Context, r: Reader, length: number): TRNS => {
   if (ctx.ihdr == null) {
     throw new Error("IHDR is not defined before tRNS");
   }
   const colorType = ctx.ihdr.colorType;
   switch (colorType) {
     case 0: {
-      const values = readBytesUntilLength(ctx, length);
+      const values = readBytesUntilLength(r, length);
       return {
         type: "tRNS",
         alphas: {
@@ -232,7 +216,7 @@ const readTRNS = (ctx: Context, length: number): TRNS => {
       };
     }
     case 2: {
-      const values = readRGBUntilLength(ctx, length);
+      const values = readRGBUntilLength(r, length);
       return {
         type: "tRNS",
         alphas: {
@@ -245,7 +229,7 @@ const readTRNS = (ctx: Context, length: number): TRNS => {
       if (ctx.plte == null) {
         throw new Error("PLTE is not defined before tRNS");
       }
-      const values = readBytesUntilLength(ctx, length);
+      const values = readBytesUntilLength(r, length);
       return {
         type: "tRNS",
         alphas: {
@@ -258,18 +242,15 @@ const readTRNS = (ctx: Context, length: number): TRNS => {
       throw new Error("Invalid color type: " + colorType);
   }
 };
-const readICCP = (ctx: Context, length: number): ICCP => {
-  const profileName = readStringUntilNull(ctx, length - 2);
+const readICCP = (r: Reader, length: number): ICCP => {
+  const profileName = r.getStringUntilNull(length - 2);
   if (profileName == null) {
     throw new Error("Invalid iCCP chunk");
   }
-  const compressionMethod = ctx.view.getUint8(ctx.offset);
-  ctx.offset += 1;
+  const compressionMethod = r.getUint8();
   const compressedProfile: number[] = [];
   for (let i = 0; i < length - profileName.length - 2; i++) {
-    const c = ctx.view.getUint8(ctx.offset);
-    compressedProfile.push(c);
-    ctx.offset += 1;
+    compressedProfile.push(r.getUint8());
   }
   return {
     type: "iCCP",
@@ -278,12 +259,12 @@ const readICCP = (ctx: Context, length: number): ICCP => {
     compressedProfile,
   };
 };
-const readTEXT = (ctx: Context, length: number): TEXT => {
-  const keyword = readStringUntilNull(ctx, length);
+const readTEXT = (r: Reader, length: number): TEXT => {
+  const keyword = r.getStringUntilNull(length);
   if (keyword == null) {
     throw new Error("Invalid TEXT chunk");
   }
-  const text = readStringUntilLength(ctx, length - keyword.length - 1);
+  const text = r.getString(length - keyword.length - 1);
   return {
     type: "tEXt",
     keyword,
@@ -291,31 +272,26 @@ const readTEXT = (ctx: Context, length: number): TEXT => {
   };
 };
 
-const readITXT = (ctx: Context, length: number): ITXT => {
-  const keyword = readStringUntilNull(ctx, length - 2);
+const readITXT = (r: Reader, length: number): ITXT => {
+  const keyword = r.getStringUntilNull(length - 2);
   if (keyword == null) {
     throw new Error("Invalid iTXt chunk");
   }
-  const compressionFlag = ctx.view.getUint8(ctx.offset);
-  ctx.offset += 1;
-  const compressionMethod = ctx.view.getUint8(ctx.offset);
-  ctx.offset += 1;
-  const languageTag = readStringUntilNull(ctx, length - keyword.length - 3);
+  const compressionFlag = r.getUint8();
+  const compressionMethod = r.getUint8();
+  const languageTag = r.getStringUntilNull(length - keyword.length - 3);
   if (languageTag == null) {
     throw new Error("Invalid iTXt chunk");
   }
-  const translatedKeyword = readStringUntilNull(
-    ctx,
+  const translatedKeyword = r.getStringUntilNull(
     length - keyword.length - languageTag.length - 4
   );
   if (translatedKeyword == null) {
     throw new Error("Invalid iTXt chunk");
   }
-  const text = readStringUntilLength(
-    ctx,
+  const text = r.getString(
     length - keyword.length - languageTag.length - translatedKeyword.length - 5
   );
-
   return {
     type: "iTXt",
     keyword,
@@ -326,13 +302,10 @@ const readITXT = (ctx: Context, length: number): ITXT => {
     text,
   };
 };
-const readPHYS = (ctx: Context, length: number): PHYS => {
-  const pixelsPerUnitXAxis = ctx.view.getUint32(ctx.offset);
-  ctx.offset += 4;
-  const pixelsPerUnitYAxis = ctx.view.getUint32(ctx.offset);
-  ctx.offset += 4;
-  const unitSpecifier = ctx.view.getUint8(ctx.offset);
-  ctx.offset += 1;
+const readPHYS = (r: Reader, _length: number): PHYS => {
+  const pixelsPerUnitXAxis = r.getUint32();
+  const pixelsPerUnitYAxis = r.getUint32();
+  const unitSpecifier = r.getUint8();
   return {
     type: "pHYs",
     pixelsPerUnitXAxis,
@@ -340,36 +313,33 @@ const readPHYS = (ctx: Context, length: number): PHYS => {
     unitSpecifier,
   };
 };
-const readEXIF = (ctx: Context, length: number): EXIF => {
-  const arr = new Uint8Array(ctx.view.buffer, ctx.offset, length);
+const readEXIF = (r: Reader, length: number): EXIF => {
+  const buf = r.getArrayBuffer(length);
   const data = readExifData({
-    view: new DataView(arr.buffer, arr.byteOffset, arr.byteLength),
+    view: new DataView(buf),
     offset: 0,
   });
-  ctx.offset += length;
   return {
     type: "eXIf",
     data,
   };
 };
-const readIDOT = (ctx: Context, length: number): IDOT => {
-  ctx.offset += length;
+const readIDOT = (r: Reader, length: number): IDOT => {
+  r.getArrayBuffer(length);
   return {
     type: "iDOT",
     length,
   };
 };
 
-const readRGBUntilLength = (ctx: Context, length: number): RGB[] => {
+const readRGBUntilLength = (r: Reader, length: number): RGB[] => {
   const rgb: RGB[] = [];
   for (let i = 0; i < length; i += 3) {
-    const r = ctx.view.getUint8(ctx.offset);
-    ctx.offset += 1;
-    const g = ctx.view.getUint8(ctx.offset);
-    ctx.offset += 1;
-    const b = ctx.view.getUint8(ctx.offset);
-    ctx.offset += 1;
-    rgb.push({ r, g, b });
+    rgb.push({
+      r: r.getUint8(),
+      g: r.getUint8(),
+      b: r.getUint8(),
+    });
   }
   return rgb;
 };

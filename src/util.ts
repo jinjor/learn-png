@@ -1,3 +1,5 @@
+import { Reader } from "./reader";
+
 export type Context = {
   view: DataView;
   offset: number;
@@ -34,15 +36,10 @@ export const readStringUntilLength = (ctx: Context, length: number): string => {
   ctx.offset += length;
   return str;
 };
-export const readBytesUntilLength = (
-  ctx: Context,
-  length: number
-): number[] => {
+export const readBytesUntilLength = (r: Reader, length: number): number[] => {
   const bytes: number[] = [];
   for (let i = 0; i < length; i++) {
-    const b = ctx.view.getUint8(ctx.offset);
-    ctx.offset += 1;
-    bytes.push(b);
+    bytes.push(r.getUint8());
   }
   return bytes;
 };

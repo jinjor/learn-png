@@ -8,17 +8,17 @@ import {
   inverseFilter,
   readData,
   readSignature,
-  readType,
 } from "./parse";
+import { Reader } from "./reader";
 const unzip = pako.inflate;
 
 export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
-  const view = new DataView(buffer);
-  const ctx = { view, offset: 0 } as Context;
-  readSignature(ctx);
+  const ctx = {} as Context;
+  const r = new Reader(buffer);
+  readSignature(r);
   const chunks: (Chunk | null)[] = [];
   while (true) {
-    const chunk = readChunk(ctx);
+    const chunk = readChunk(ctx, r);
     chunks.push(chunk);
     if (chunk?.type === "IEND") {
       break;
@@ -81,12 +81,10 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
   return pixels;
 };
 
-const readChunk = (ctx: Context): Chunk | null => {
-  const length = ctx.view.getUint32(ctx.offset);
-  ctx.offset += 4;
-  const type = readType(ctx);
-  const data = readData(ctx, length, type);
-  const crc = ctx.view.getUint32(ctx.offset);
-  ctx.offset += 4;
+const readChunk = (ctx: Context, r: Reader): Chunk | null => {
+  const length = r.getUint32();
+  const type = r.getString(4);
+  const data = readData(ctx, r, length, type);
+  const crc = r.getUint32();
   return data;
 };
