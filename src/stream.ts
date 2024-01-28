@@ -8,7 +8,7 @@ import {
   readData,
   readSignature,
 } from "./parse";
-import { concatBuffers, readStringUntilLength, splitIterable } from "./util";
+import { concatBuffers, splitIterable } from "./util";
 import { Reader } from "./reader";
 
 export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{

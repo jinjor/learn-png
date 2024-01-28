@@ -2,13 +2,22 @@ export class Reader {
   private view: DataView;
   private offset: number;
   private littleEndian: boolean;
-  constructor(buffer: ArrayBuffer, littleEndian = false) {
+  constructor(buffer: ArrayBuffer, offset = 0, littleEndian = false) {
     this.view = new DataView(buffer);
-    this.offset = 0;
+    this.offset = offset;
     this.littleEndian = littleEndian;
   }
   getOffset(): number {
     return this.offset;
+  }
+  setOffset(offset: number): void {
+    this.offset = offset;
+  }
+  setEndian(littleEndian: boolean): void {
+    this.littleEndian = littleEndian;
+  }
+  skip(length: number): void {
+    this.offset += length;
   }
   getUint8(): number {
     const value = this.view.getUint8(this.offset);
@@ -22,6 +31,21 @@ export class Reader {
   }
   getUint32(): number {
     const value = this.view.getUint32(this.offset, this.littleEndian);
+    this.offset += 4;
+    return value;
+  }
+  getInt8(): number {
+    const value = this.view.getInt8(this.offset);
+    this.offset += 1;
+    return value;
+  }
+  getInt16(): number {
+    const value = this.view.getInt16(this.offset, this.littleEndian);
+    this.offset += 2;
+    return value;
+  }
+  getInt32(): number {
+    const value = this.view.getInt32(this.offset, this.littleEndian);
     this.offset += 4;
     return value;
   }
@@ -45,10 +69,11 @@ export class Reader {
     }
     return null;
   }
-  // slice(length: number, littleEndian?: boolean): Reader {
-  //   return new Reader(
-  //     this.getArrayBuffer(length),
-  //     littleEndian ?? this.littleEndian
-  //   );
-  // }
+  branch(offset?: number, littleEndian?: boolean): Reader {
+    return new Reader(
+      this.view.buffer,
+      offset ?? this.offset,
+      littleEndian ?? this.littleEndian
+    );
+  }
 }

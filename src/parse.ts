@@ -1,8 +1,3 @@
-import {
-  readBytesUntilLength,
-  readStringUntilLength,
-  readStringUntilNull,
-} from "./util";
 import { readExifData } from "./exif";
 import { Reader } from "./reader";
 
@@ -315,23 +310,27 @@ const readPHYS = (r: Reader, _length: number): PHYS => {
 };
 const readEXIF = (r: Reader, length: number): EXIF => {
   const buf = r.getArrayBuffer(length);
-  const data = readExifData({
-    view: new DataView(buf),
-    offset: 0,
-  });
+  const data = readExifData(buf);
   return {
     type: "eXIf",
     data,
   };
 };
 const readIDOT = (r: Reader, length: number): IDOT => {
-  r.getArrayBuffer(length);
+  r.skip(length);
   return {
     type: "iDOT",
     length,
   };
 };
 
+const readBytesUntilLength = (r: Reader, length: number): number[] => {
+  const bytes: number[] = [];
+  for (let i = 0; i < length; i++) {
+    bytes.push(r.getUint8());
+  }
+  return bytes;
+};
 const readRGBUntilLength = (r: Reader, length: number): RGB[] => {
   const rgb: RGB[] = [];
   for (let i = 0; i < length; i += 3) {
