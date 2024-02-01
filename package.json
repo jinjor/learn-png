@@ -4,13 +4,14 @@
     "build": "esbuild src/app.mts --bundle --outfile=dist/app.mjs --format=esm",
     "serve": "npx -y http-server .",
     "preview": "pnpm run build && pnpm run serve",
-    "test": "tsx src/index.ts assets/mac_ss_large.png"
+    "test": "tsx src/index.ts assets/mac_ss_large_interlace.png"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
     "@types/pako": "^2.0.3",
     "biome": "^0.3.3",
     "esbuild": "^0.19.11",
+    "optipng-bin": "^9.0.0",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   },
