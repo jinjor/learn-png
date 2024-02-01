@@ -392,7 +392,7 @@ export const inverseFilter = (
     }
     case 3: {
       for (let i = 0; i < bytesPerPixel; i++) {
-        scanLine[i] = (scanLine[i] + prevLine![i]) / 2;
+        scanLine[i] = (scanLine[i] + prevLine![i] / 2) % 256;
       }
       for (let i = bytesPerPixel; i < scanLine.length; i++) {
         scanLine[i] =
