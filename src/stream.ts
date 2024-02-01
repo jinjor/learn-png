@@ -37,6 +37,9 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
       foundRow = true;
       emitter.start(ihdr);
     }
+    if (ihdr.interlaceMethod !== 0) {
+      throw new Error("Interlace is not supported");
+    }
     const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
     const line = chunk.data;
     const filterType = line[0];

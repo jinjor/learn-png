@@ -10,6 +10,7 @@ import {
   readSignature,
 } from "./parse";
 import { Reader } from "./reader";
+import { interlacing } from "./interlace";
 const unzip = pako.inflate;
 
 export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
@@ -48,35 +49,84 @@ export const parse = async (buffer: ArrayBuffer): Promise<RGBA[][]> => {
   // console.log(zipped.length, unzipped.length);
 
   const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
-  if (ihdr.interlaceMethod !== 0) {
-    throw new Error("Interlace is not supported");
-  }
-  const bytesPerLine = bytesPerPixel * ihdr.width + 1;
-  const pixels: RGBA[][] = [];
-
-  let prevLine: Uint8Array | null = null;
-  for (let y = 0; y < ihdr.height; y++) {
-    const line = new Uint8Array(
-      unzipped.buffer,
-      y * bytesPerLine,
-      bytesPerLine
+  if (ihdr.interlaceMethod === 1) {
+    let array = unzipped;
+    const pixels = new Uint8Array(ihdr.width * ihdr.height * bytesPerPixel);
+    for (let i = 0; i < 7; i++) {
+      const { xFactor, yFactor, xOffset, yOffset } = interlacing[i];
+      const passWidth = Math.ceil((ihdr.width - xOffset) / xFactor);
+      const passHeight = Math.ceil((ihdr.height - yOffset) / yFactor);
+      const passLength = passHeight * (passWidth * bytesPerPixel + 1);
+      const passPixels = inverseAllFilters(
+        bytesPerPixel,
+        passWidth,
+        passHeight,
+        array
+      );
+      for (let y = 0; y < passHeight; y++) {
+        for (let x = 0; x < passWidth; x++) {
+          const srcIndex = (y * passWidth + x) * bytesPerPixel;
+          const dstIndex =
+            ((y * yFactor + yOffset) * ihdr.width + x * xFactor + xOffset) *
+            bytesPerPixel;
+          pixels.set(
+            passPixels.slice(srcIndex, srcIndex + bytesPerPixel),
+            dstIndex
+          );
+        }
+      }
+      array = array.slice(passLength);
+    }
+    return convertToRGBA(bytesPerPixel, ihdr.width, ihdr.height, pixels);
+  } else {
+    const pixels = inverseAllFilters(
+      bytesPerPixel,
+      ihdr.width,
+      ihdr.height,
+      unzipped
     );
+    return convertToRGBA(bytesPerPixel, ihdr.width, ihdr.height, pixels);
+  }
+};
+const convertToRGBA = (
+  bytesPerPixel: number,
+  width: number,
+  height: number,
+  src: Uint8Array
+): RGBA[][] => {
+  const bytesPerLine = bytesPerPixel * width;
+  const rgbas: RGBA[][] = [];
+  for (let y = 0; y < height; y++) {
+    const row: RGBA[] = [];
+    for (let x = 0; x < width; x++) {
+      const i = y * bytesPerLine + x * bytesPerPixel;
+      const r = src[i];
+      const g = src[i + 1];
+      const b = src[i + 2];
+      const a = bytesPerPixel === 4 ? src[i + 3] : 255;
+      row.push({ r, g, b, a });
+    }
+    rgbas.push(row);
+  }
+  return rgbas;
+};
+
+const inverseAllFilters = (
+  bytesPerPixel: number,
+  width: number,
+  height: number,
+  src: Uint8Array
+): Uint8Array => {
+  const bytesPerLine = bytesPerPixel * width + 1;
+  const pixels = new Uint8Array(width * height * bytesPerPixel);
+  let prevLine: Uint8Array | null = null;
+  for (let y = 0; y < height; y++) {
+    const line = src.slice(y * bytesPerLine, (y + 1) * bytesPerLine);
     const filterType = line[0];
     const scanLine = line.slice(1);
-    const pixelLine: RGBA[] = [];
-
     inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
     prevLine = scanLine;
-
-    for (let x = 0; x < ihdr.width; x++) {
-      const offset = x * bytesPerPixel;
-      const r = scanLine[offset];
-      const g = scanLine[offset + 1];
-      const b = scanLine[offset + 2];
-      const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
-      pixelLine.push({ r, g, b, a });
-    }
-    pixels.push(pixelLine);
+    pixels.set(scanLine, y * (bytesPerLine - 1));
   }
   return pixels;
 };

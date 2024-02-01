@@ -418,7 +418,7 @@ export const inverseFilter = (
       break;
     }
     default: {
-      throw new Error("not implemented");
+      throw new Error(`Invalid filter type: ${filterType}`);
     }
   }
 };
