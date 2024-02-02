@@ -1,15 +1,15 @@
 import pako from "pako";
 import {
-  Chunk,
   IHDR,
+  KnownChunk,
   RGBA,
   getbytesPerPixel,
-  inverseFilter,
-  readData,
+  readChunk,
   readSignature,
 } from "./parse";
 import { concatBuffers, splitIterable } from "./util";
 import { Reader } from "./reader";
+import { inverseFilter } from "./filter";
 
 export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
   head: IHDR;
@@ -78,7 +78,6 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
       buffer = concatBuffers([buffer, chunk.data]);
       const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
       const width = ihdr.width;
-      // const height = ihdr.height;
       const bytesPerRow = width * bytesPerPixel + 1;
       while (buffer.length >= bytesPerRow) {
         const row = buffer.slice(0, bytesPerRow);
@@ -98,7 +97,7 @@ export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
     resolve = r;
   });
   let done = false;
-  let results: (Chunk | { type: "data"; data: Uint8Array })[] = [];
+  let results: (KnownChunk | { type: "data"; data: Uint8Array })[] = [];
 
   const inflator = new pako.Inflate();
   inflator.onData = (data: Uint8Array) => {
@@ -114,11 +113,8 @@ export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
   };
   (async () => {
     // TODO: error handling
-    for await (const { type, data: buffer } of chunkStream(stream)) {
-      const r = new Reader(buffer);
-      const length = buffer.byteLength;
-      const chunk = readData({}, r, length, type);
-      if (chunk == null) {
+    for await (const chunk of chunkStream(stream)) {
+      if ("unknown" in chunk) {
         continue;
       }
       if (chunk.type === "IDAT") {
@@ -143,27 +139,20 @@ export async function* chunkStream(stream: AsyncIterable<Uint8Array>) {
     while (true) {
       const r = new Reader(buffer.buffer);
       if (!sigRead) {
-        if (buffer.length < 8) {
-          break;
+        if (readSignature(r) !== true) {
+          throw new Error("Invalid PNG signature");
         }
-        readSignature(r);
         sigRead = true;
         buffer = buffer.slice(r.getOffset());
         continue;
       }
-      if (buffer.length < 12) {
+      const chunk = readChunk({}, r);
+      if (chunk == null) {
         break;
       }
-      const length = r.getUint32();
-      const chunkLength = length + 12;
-      if (buffer.length < chunkLength) {
-        break;
-      }
-      const type = r.getString(4);
-      const data = r.getArrayBuffer(length);
-      const crc = r.getUint32();
+      const chunkLength = chunk.dataLength + 12;
       buffer = buffer.slice(chunkLength);
-      yield { type, data };
+      yield chunk;
     }
   }
 }

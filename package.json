@@ -4,7 +4,7 @@
     "build": "esbuild src/app.mts --bundle --outfile=dist/app.mjs --format=esm",
     "serve": "npx -y http-server .",
     "preview": "pnpm run build && pnpm run serve",
-    "test": "tsx src/index.ts assets/mac_ss_large_interlace.png"
+    "test": "tsx src/test.ts"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",

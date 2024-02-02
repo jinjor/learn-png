@@ -16,6 +16,9 @@ export class Reader {
   setEndian(littleEndian: boolean): void {
     this.littleEndian = littleEndian;
   }
+  canRead(length: number): boolean {
+    return this.view.byteLength >= this.offset + length;
+  }
   skip(length: number): void {
     this.offset += length;
   }
