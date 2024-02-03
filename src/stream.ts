@@ -1,13 +1,14 @@
 import pako from "pako";
 import {
+  Chunk,
   IHDR,
   KnownChunk,
   RGBA,
   getbytesPerPixel,
-  readChunk,
+  readData,
   readSignature,
 } from "./parse";
-import { concatBuffers, splitIterable } from "./util";
+import { concatBuffers, splitIterable, typedArrayToBuffer } from "./util";
 import { Reader } from "./reader";
 import { inverseFilter } from "./filter";
 
@@ -131,13 +132,16 @@ export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
   }
 }
 
-export async function* chunkStream(stream: AsyncIterable<Uint8Array>) {
+export async function* chunkStream(
+  stream: AsyncIterable<Uint8Array>
+): AsyncIterable<Chunk> {
   let buffer = new Uint8Array(0);
   let sigRead = false;
+  let dataLeft = -1;
   for await (const chunk of stream) {
     buffer = concatBuffers([buffer, chunk]);
     while (true) {
-      const r = new Reader(buffer.buffer);
+      const r = new Reader(buffer.buffer, buffer.byteOffset);
       if (!sigRead) {
         if (readSignature(r) !== true) {
           throw new Error("Invalid PNG signature");
@@ -146,13 +150,54 @@ export async function* chunkStream(stream: AsyncIterable<Uint8Array>) {
         buffer = buffer.slice(r.getOffset());
         continue;
       }
-      const chunk = readChunk({}, r);
-      if (chunk == null) {
-        break;
+      if (dataLeft === -1) {
+        if (!r.canRead(8)) {
+          break;
+        }
+        const length = r.getUint32();
+        const type = r.getString(4);
+        if (type === "IDAT") {
+          dataLeft = length;
+          buffer = buffer.slice(8);
+          continue;
+        } else {
+          if (!r.canRead(length + 4)) {
+            break;
+          }
+          const data = readData({}, r, length, type);
+          const crc = r.getUint32();
+
+          const chunkLength = length + 12;
+          buffer = buffer.slice(chunkLength);
+          yield { ...data, dataLength: length } as const;
+        }
+      } else {
+        if (r.canRead(dataLeft + 4)) {
+          const data = r.getArrayBuffer(dataLeft);
+          const crc = r.getUint32();
+          const chunk = {
+            type: "IDAT",
+            data,
+            dataLength: dataLeft,
+          } as Chunk;
+          buffer = buffer.slice(dataLeft + 4);
+          dataLeft = -1;
+          yield chunk;
+        } else if (r.canRead(dataLeft)) {
+          break;
+        } else {
+          const data = typedArrayToBuffer(buffer);
+          const chunk = {
+            type: "IDAT",
+            data,
+            dataLength: data.byteLength,
+          } as Chunk;
+          buffer = new Uint8Array(0);
+          dataLeft -= data.byteLength;
+          yield chunk;
+          break;
+        }
       }
-      const chunkLength = chunk.dataLength + 12;
-      buffer = buffer.slice(chunkLength);
-      yield chunk;
     }
   }
 }

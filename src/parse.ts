@@ -139,7 +139,7 @@ export const readChunk = (ctx: Context, r: Reader): Chunk | null => {
   return { ...data, dataLength: length } as const;
 };
 
-const readData = (
+export const readData = (
   ctx: Context,
   r: Reader,
   length: number,

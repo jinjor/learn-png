@@ -9,6 +9,13 @@ export const concatBuffers = (bufs: Uint8Array[]): Uint8Array => {
   return concatBuf;
 };
 
+export const typedArrayToBuffer = (array: Uint8Array): ArrayBuffer => {
+  return array.buffer.slice(
+    array.byteOffset,
+    array.byteLength + array.byteOffset
+  );
+};
+
 export const splitIterable = <H, S, T>(
   stream: AsyncIterable<S>,
   handle: (
