@@ -36,6 +36,15 @@ export const calcPassSizes = (
   return { passWidth, passHeight, passLengthPerLine, passLength };
 };
 
+export const remapX = (x: number, interlace: Interlacing) => {
+  const { xFactor, xOffset } = interlace;
+  return x * xFactor + xOffset;
+};
+export const remapY = (y: number, interlace: Interlacing) => {
+  const { yFactor, yOffset } = interlace;
+  return y * yFactor + yOffset;
+};
+
 const rewritePixels = (
   width: number,
   bytesPerPixel: number,
@@ -44,14 +53,12 @@ const rewritePixels = (
   passPixels: Uint8Array,
   pixels: Uint8Array
 ) => {
-  const { xFactor, yFactor, xOffset, yOffset } = interlace;
   const { passWidth, passHeight } = passSizes;
   for (let y = 0; y < passHeight; y++) {
     for (let x = 0; x < passWidth; x++) {
       const srcIndex = (y * passWidth + x) * bytesPerPixel;
       const dstIndex =
-        ((y * yFactor + yOffset) * width + x * xFactor + xOffset) *
-        bytesPerPixel;
+        (remapY(y, interlace) * width + remapX(x, interlace)) * bytesPerPixel;
       pixels.set(
         passPixels.slice(srcIndex, srcIndex + bytesPerPixel),
         dstIndex

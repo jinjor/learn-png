@@ -4,7 +4,7 @@ import { requestPixelStream } from "./stream";
 const button1 = document.getElementById("button1")!;
 button1.onclick = async () => {
   const img = document.getElementById("img") as HTMLImageElement;
-  const src = img.src;
+  const src = img.src + "?" + Date.now();
 
   const start = Date.now();
 
@@ -35,7 +35,7 @@ button1.onclick = async () => {
 const button2 = document.getElementById("button2")!;
 button2.onclick = async () => {
   const img = document.getElementById("img") as HTMLImageElement;
-  const src = img.src;
+  const src = img.src + "?" + Date.now();
 
   const start = Date.now();
 
@@ -50,12 +50,11 @@ button2.onclick = async () => {
 
   const ctx = canvas.getContext("2d")!;
 
-  for await (const { y, colors } of body) {
-    for (let x = 0; x < colors.length; x++) {
-      const pixel = colors[x];
-      const color = `rgb(${pixel.r}, ${pixel.g}, ${pixel.b})`;
-      ctx.fillStyle = color;
-      ctx.fillRect(x, y, 1, 1);
+  for await (const { pixels, interpolation } of body) {
+    console.log(interpolation?.interlaceIndex);
+    for (const { x, y, color } of pixels) {
+      ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
+      ctx.fillRect(x, y, interpolation?.spanX ?? 1, interpolation?.spanY ?? 1);
     }
   }
   console.log("time2:", Date.now() - start);

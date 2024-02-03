@@ -12,22 +12,27 @@ import { concatBuffers, splitIterable, typedArrayToBuffer } from "./util";
 import { Reader } from "./reader";
 import { inverseFilter } from "./filter";
 import {
-  Interlacing,
   Interpolation,
   adam7,
   adam7Interpolation,
   calcPassSizes,
+  remapX,
+  remapY,
 } from "./interlace";
 
 export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
   head: IHDR;
   body: AsyncIterable<{
-    y: number;
-    colors: RGBA[];
+    interpolation?: Interpolation & { interlaceIndex: number };
+    pixels: {
+      x: number;
+      y: number;
+      color: RGBA;
+    }[];
   }>;
 }> {
   let foundData = false;
-  let currentInterlaceIndex = -1;
+  let prevInterlaceIndex = -1;
   let ihdr: IHDR | undefined;
   let prevLine: Uint8Array | null = null;
   return splitIterable(rowStream(stream), (emitter, chunk) => {
@@ -54,26 +59,40 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
     const line = chunk.data;
     const filterType = line[0];
     const scanLine = line.slice(1);
-    if (currentInterlaceIndex !== chunk.interlaceIndex) {
-      currentInterlaceIndex = chunk.interlaceIndex;
+    if (prevInterlaceIndex !== chunk.interlaceIndex) {
       prevLine = null;
     }
     inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
     prevLine = scanLine;
 
-    const colors: RGBA[] = [];
+    const interlace = adam7[chunk.interlaceIndex];
+    const pixels: {
+      x: number;
+      y: number;
+      color: RGBA;
+    }[] = [];
     for (let x = 0; x < scanLine.length / bytesPerPixel; x++) {
       const offset = x * bytesPerPixel;
       const r = scanLine[offset];
       const g = scanLine[offset + 1];
       const b = scanLine[offset + 2];
       const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
-      colors.push({ r, g, b, a });
+      pixels.push({
+        x: interlace ? remapX(x, interlace) : x,
+        y: interlace ? remapY(y, interlace) : y,
+        color: { r, g, b, a },
+      });
     }
     emitter.data({
-      y,
-      colors,
+      interpolation: interlace
+        ? {
+            ...adam7Interpolation[chunk.interlaceIndex],
+            interlaceIndex: chunk.interlaceIndex,
+          }
+        : undefined,
+      pixels,
     });
+    prevInterlaceIndex = chunk.interlaceIndex;
   });
 }
 
