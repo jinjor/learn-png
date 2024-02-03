@@ -5,7 +5,7 @@ type Interlacing = {
   yOffset: number;
 };
 
-const interlacing: Interlacing[] = [
+const adam7: Interlacing[] = [
   { xFactor: 8, yFactor: 8, xOffset: 0, yOffset: 0 },
   { xFactor: 8, yFactor: 8, xOffset: 4, yOffset: 0 },
   { xFactor: 4, yFactor: 8, xOffset: 0, yOffset: 4 },
@@ -71,8 +71,8 @@ export const inversePassFiltersSync = (
   src: Uint8Array
 ) => {
   const pixels = new Uint8Array(width * height * bytesPerPixel);
-  for (let i = 0; i < interlacing.length; i++) {
-    const interlace = interlacing[i];
+  for (let i = 0; i < adam7.length; i++) {
+    const interlace = adam7[i];
     const passSizes = calcPassSizes(width, height, bytesPerPixel, interlace);
     const passPixels = inversePassFilters(
       bytesPerPixel,
@@ -92,3 +92,18 @@ export const inversePassFiltersSync = (
   }
   return pixels;
 };
+
+type Interpolation = {
+  spanX: number;
+  spanY: number;
+};
+
+export const adam7Interpolation: Interpolation[] = [
+  { spanX: 8, spanY: 8 },
+  { spanX: 4, spanY: 8 },
+  { spanX: 4, spanY: 4 },
+  { spanX: 2, spanY: 4 },
+  { spanX: 2, spanY: 2 },
+  { spanX: 1, spanY: 2 },
+  { spanX: 1, spanY: 1 },
+];
