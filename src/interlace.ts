@@ -1,11 +1,11 @@
-type Interlacing = {
+export type Interlacing = {
   xFactor: number;
   yFactor: number;
   xOffset: number;
   yOffset: number;
 };
 
-const adam7: Interlacing[] = [
+export const adam7: Interlacing[] = [
   { xFactor: 8, yFactor: 8, xOffset: 0, yOffset: 0 },
   { xFactor: 8, yFactor: 8, xOffset: 4, yOffset: 0 },
   { xFactor: 4, yFactor: 8, xOffset: 0, yOffset: 4 },
@@ -93,7 +93,7 @@ export const inversePassFiltersSync = (
   return pixels;
 };
 
-type Interpolation = {
+export type Interpolation = {
   spanX: number;
   spanY: number;
 };

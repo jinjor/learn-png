@@ -11,12 +11,22 @@ import {
 import { concatBuffers, splitIterable, typedArrayToBuffer } from "./util";
 import { Reader } from "./reader";
 import { inverseFilter } from "./filter";
+import {
+  Interlacing,
+  Interpolation,
+  adam7,
+  adam7Interpolation,
+} from "./interlace";
 
 export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
   head: IHDR;
-  body: AsyncIterable<RGBA[]>;
+  body: AsyncIterable<{
+    y: number;
+    colors: RGBA[];
+    interlace: Interlacing & Interpolation;
+  }>;
 }> {
-  let foundRow = false;
+  let rowIndex = -1;
   let ihdr: IHDR | undefined;
   let prevLine: Uint8Array | null = null;
   return splitIterable(rowStream(stream), (emitter, chunk) => {
@@ -34,31 +44,37 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
     if (ihdr == null) {
       throw new Error("IHDR is not defined");
     }
-    if (!foundRow) {
-      foundRow = true;
+    rowIndex++;
+    if (rowIndex === 0) {
       emitter.start(ihdr);
     }
-    if (ihdr.interlaceMethod !== 0) {
-      throw new Error("Interlace is not supported");
-    }
     const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
-    const line = chunk.data;
-    const filterType = line[0];
-    const scanLine = line.slice(1);
-    const pixelLine: RGBA[] = [];
+    if (ihdr.interlaceMethod === 1) {
+    } else {
+      const y = rowIndex;
+      const line = chunk.data;
+      const filterType = line[0];
+      const scanLine = line.slice(1);
 
-    inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
-    prevLine = scanLine;
+      inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
+      prevLine = scanLine;
+      const interlace = { ...adam7[6], ...adam7Interpolation[6] };
 
-    for (let x = 0; x < ihdr.width; x++) {
-      const offset = x * bytesPerPixel;
-      const r = scanLine[offset];
-      const g = scanLine[offset + 1];
-      const b = scanLine[offset + 2];
-      const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
-      pixelLine.push({ r, g, b, a });
+      const colors: RGBA[] = [];
+      for (let x = 0; x < ihdr.width; x++) {
+        const offset = x * bytesPerPixel;
+        const r = scanLine[offset];
+        const g = scanLine[offset + 1];
+        const b = scanLine[offset + 2];
+        const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
+        colors.push({ r, g, b, a });
+      }
+      emitter.data({
+        y,
+        colors,
+        interlace,
+      });
     }
-    emitter.data(pixelLine);
   });
 }
 

@@ -50,15 +50,13 @@ button2.onclick = async () => {
 
   const ctx = canvas.getContext("2d")!;
 
-  let y = 0;
-  for await (const row of body) {
-    for (let x = 0; x < row.length; x++) {
-      const pixel = row[x];
+  for await (const { y, colors, interlace } of body) {
+    for (let x = 0; x < colors.length; x++) {
+      const pixel = colors[x];
       const color = `rgb(${pixel.r}, ${pixel.g}, ${pixel.b})`;
       ctx.fillStyle = color;
       ctx.fillRect(x, y, 1, 1);
     }
-    y++;
   }
   console.log("time2:", Date.now() - start);
 };

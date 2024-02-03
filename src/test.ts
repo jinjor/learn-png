@@ -1,7 +1,6 @@
 import fs from "fs";
 import { parse } from "./sync";
 import { requestPixelStream } from "./stream";
-import { Chunk } from "./parse";
 
 (async () => {
   const files = fs.readdirSync("assets");
