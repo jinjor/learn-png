@@ -6,7 +6,10 @@ export type Context = {
   plte?: PLTE;
 };
 
-export type Chunk =
+export type ChunkBase = {
+  dataLength: number;
+};
+export type KnownChunkBody =
   | IHDR
   | PLTE
   | IDAT
@@ -18,6 +21,9 @@ export type Chunk =
   | PHYS
   | EXIF
   | IDOT;
+export type ChunkBody = KnownChunkBody | UnknownChunk;
+export type KnownChunk = ChunkBase & KnownChunkBody;
+export type Chunk = ChunkBase & ChunkBody;
 
 export type IHDR = {
   type: "IHDR";
@@ -100,24 +106,45 @@ export type EXIF = {
 };
 export type IDOT = {
   type: "iDOT";
-  length: number;
+};
+export type UnknownChunk = {
+  unknown: true;
+  type: string;
 };
 
-export const readSignature = (r: Reader) => {
+export const readSignature = (r: Reader): boolean | null => {
+  if (!r.canRead(8)) {
+    return null;
+  }
   const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
   for (let i = 0; i < pngSignature.length; i++) {
     if (r.getUint8() !== pngSignature[i]) {
-      throw new Error("Invalid PNG signature");
+      return false;
     }
   }
+  return true;
 };
 
-export const readData = (
+export const readChunk = (ctx: Context, r: Reader): Chunk | null => {
+  if (!r.canRead(4)) {
+    return null;
+  }
+  const length = r.getUint32();
+  if (!r.canRead(length + 8)) {
+    return null;
+  }
+  const type = r.getString(4);
+  const data = readData(ctx, r, length, type);
+  const crc = r.getUint32();
+  return { ...data, dataLength: length } as const;
+};
+
+const readData = (
   ctx: Context,
   r: Reader,
   length: number,
   type: string
-): Chunk | null => {
+): ChunkBody => {
   switch (type) {
     case "IHDR":
       return readIHDR(ctx, r);
@@ -142,9 +169,11 @@ export const readData = (
     case "iDOT":
       return readIDOT(r, length);
     default:
-      console.log(`Unknown chunk type: ${type} ${length} bytes`);
-      r.getArrayBuffer(length);
-      return null;
+      r.skip(length);
+      return {
+        unknown: true,
+        type,
+      };
   }
 };
 
@@ -320,7 +349,6 @@ const readIDOT = (r: Reader, length: number): IDOT => {
   r.skip(length);
   return {
     type: "iDOT",
-    length,
   };
 };
 
@@ -366,77 +394,4 @@ const getBitsPerPixel = (colorType: number, bitDepth: number): number => {
     default:
       throw new Error("Invalid color type: " + colorType);
   }
-};
-
-export const inverseFilter = (
-  filterType: number,
-  bytesPerPixel: number,
-  scanLine: Uint8Array,
-  prevLine: Uint8Array | null
-) => {
-  switch (filterType) {
-    case 0: {
-      break;
-    }
-    case 1: {
-      for (let i = bytesPerPixel; i < scanLine.length; i++) {
-        scanLine[i] = (scanLine[i] + scanLine[i - bytesPerPixel]) % 256;
-      }
-      break;
-    }
-    case 2: {
-      for (let i = 0; i < scanLine.length; i++) {
-        scanLine[i] = (scanLine[i] + prevLine![i]) % 256;
-      }
-      break;
-    }
-    case 3: {
-      for (let i = 0; i < bytesPerPixel; i++) {
-        scanLine[i] = (scanLine[i] + prevLine![i] / 2) % 256;
-      }
-      for (let i = bytesPerPixel; i < scanLine.length; i++) {
-        scanLine[i] =
-          (scanLine[i] + (scanLine[i - bytesPerPixel] + prevLine![i]) / 2) %
-          256;
-      }
-      break;
-    }
-    case 4: {
-      for (let i = 0; i < bytesPerPixel; i++) {
-        scanLine[i] = (scanLine[i] + paeth(0, prevLine![i], 0)) % 256;
-      }
-      for (let i = bytesPerPixel; i < scanLine.length; i++) {
-        scanLine[i] =
-          (scanLine[i] +
-            paeth(
-              scanLine[i - bytesPerPixel],
-              prevLine![i],
-              prevLine![i - bytesPerPixel]
-            )) %
-          256;
-      }
-      break;
-    }
-    default: {
-      throw new Error(`Invalid filter type: ${filterType}`);
-    }
-  }
-};
-
-const paeth = (
-  a: number /* left */,
-  b: number /* up */,
-  c: number /* left-up */
-) => {
-  const p = a + b - c;
-  const pa = Math.abs(p - a); // left distance
-  const pb = Math.abs(p - b); // up distance
-  const pc = Math.abs(p - c); // left+up distance
-  if (pa <= pb && pa <= pc) {
-    return a;
-  }
-  if (pb <= pc) {
-    return b;
-  }
-  return c;
 };
