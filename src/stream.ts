@@ -1,21 +1,38 @@
 import pako from "pako";
 import {
+  Chunk,
   IHDR,
   KnownChunk,
   RGBA,
   getbytesPerPixel,
-  readChunk,
+  readData,
   readSignature,
 } from "./parse";
-import { concatBuffers, splitIterable } from "./util";
+import { concatBuffers, splitIterable, typedArrayToBuffer } from "./util";
 import { Reader } from "./reader";
 import { inverseFilter } from "./filter";
+import {
+  Interpolation,
+  adam7,
+  adam7Interpolation,
+  calcPassSizes,
+  remapX,
+  remapY,
+} from "./interlace";
 
 export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
   head: IHDR;
-  body: AsyncIterable<RGBA[]>;
+  body: AsyncIterable<{
+    interpolation?: Interpolation & { interlaceIndex: number };
+    pixels: {
+      x: number;
+      y: number;
+      color: RGBA;
+    }[];
+  }>;
 }> {
-  let foundRow = false;
+  let foundData = false;
+  let prevInterlaceIndex = -1;
   let ihdr: IHDR | undefined;
   let prevLine: Uint8Array | null = null;
   return splitIterable(rowStream(stream), (emitter, chunk) => {
@@ -33,31 +50,49 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
     if (ihdr == null) {
       throw new Error("IHDR is not defined");
     }
-    if (!foundRow) {
-      foundRow = true;
+    if (!foundData) {
+      foundData = true;
       emitter.start(ihdr);
     }
-    if (ihdr.interlaceMethod !== 0) {
-      throw new Error("Interlace is not supported");
-    }
     const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
+    const y = chunk.rowIndex;
     const line = chunk.data;
     const filterType = line[0];
     const scanLine = line.slice(1);
-    const pixelLine: RGBA[] = [];
-
+    if (prevInterlaceIndex !== chunk.interlaceIndex) {
+      prevLine = null;
+    }
     inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
     prevLine = scanLine;
 
-    for (let x = 0; x < ihdr.width; x++) {
+    const interlace = adam7[chunk.interlaceIndex];
+    const pixels: {
+      x: number;
+      y: number;
+      color: RGBA;
+    }[] = [];
+    for (let x = 0; x < scanLine.length / bytesPerPixel; x++) {
       const offset = x * bytesPerPixel;
       const r = scanLine[offset];
       const g = scanLine[offset + 1];
       const b = scanLine[offset + 2];
       const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
-      pixelLine.push({ r, g, b, a });
+      pixels.push({
+        x: interlace ? remapX(x, interlace) : x,
+        y: interlace ? remapY(y, interlace) : y,
+        color: { r, g, b, a },
+      });
     }
-    emitter.data(pixelLine);
+    emitter.data({
+      interpolation: interlace
+        ? {
+            ...adam7Interpolation[chunk.interlaceIndex],
+            interlaceIndex: chunk.interlaceIndex,
+          }
+        : undefined,
+      pixels,
+    });
+    prevInterlaceIndex = chunk.interlaceIndex;
   });
 }
 
@@ -65,6 +100,8 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
   let buffer = new Uint8Array(0);
 
   let ihdr: IHDR | undefined;
+  let interlaceIndex = 0;
+  let rowIndex = 0;
   for await (const chunk of unzippedStream(stream)) {
     yield chunk;
     if (chunk.type === "IHDR") {
@@ -77,15 +114,51 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
       }
       buffer = concatBuffers([buffer, chunk.data]);
       const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
-      const width = ihdr.width;
-      const bytesPerRow = width * bytesPerPixel + 1;
-      while (buffer.length >= bytesPerRow) {
-        const row = buffer.slice(0, bytesPerRow);
-        yield {
-          type: "row",
-          data: row,
-        } as const;
-        buffer = buffer.slice(bytesPerRow);
+      if (ihdr.interlaceMethod === 1) {
+        while (true) {
+          const interlace = adam7[interlaceIndex];
+          const passSizes = calcPassSizes(
+            ihdr.width,
+            ihdr.height,
+            bytesPerPixel,
+            interlace
+          );
+          if (rowIndex >= passSizes.passHeight) {
+            rowIndex = 0;
+            interlaceIndex++;
+            if (interlaceIndex === 7) {
+              break;
+            }
+            continue;
+          }
+          const bytesPerRow = passSizes.passLengthPerLine;
+          if (buffer.length < bytesPerRow) {
+            break;
+          }
+          const row = buffer.slice(0, bytesPerRow);
+          yield {
+            type: "row",
+            data: row,
+            interlaceIndex,
+            rowIndex,
+          } as const;
+          buffer = buffer.slice(bytesPerRow);
+          rowIndex++;
+        }
+      } else {
+        const width = ihdr.width;
+        const bytesPerRow = width * bytesPerPixel + 1;
+        while (buffer.length >= bytesPerRow) {
+          const row = buffer.slice(0, bytesPerRow);
+          yield {
+            type: "row",
+            data: row,
+            interlaceIndex: -1,
+            rowIndex,
+          } as const;
+          buffer = buffer.slice(bytesPerRow);
+          rowIndex++;
+        }
       }
     }
   }
@@ -131,13 +204,16 @@ export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
   }
 }
 
-export async function* chunkStream(stream: AsyncIterable<Uint8Array>) {
+export async function* chunkStream(
+  stream: AsyncIterable<Uint8Array>
+): AsyncIterable<Chunk> {
   let buffer = new Uint8Array(0);
   let sigRead = false;
+  let dataLeft = -1;
   for await (const chunk of stream) {
     buffer = concatBuffers([buffer, chunk]);
     while (true) {
-      const r = new Reader(buffer.buffer);
+      const r = new Reader(buffer.buffer, buffer.byteOffset);
       if (!sigRead) {
         if (readSignature(r) !== true) {
           throw new Error("Invalid PNG signature");
@@ -146,13 +222,54 @@ export async function* chunkStream(stream: AsyncIterable<Uint8Array>) {
         buffer = buffer.slice(r.getOffset());
         continue;
       }
-      const chunk = readChunk({}, r);
-      if (chunk == null) {
-        break;
+      if (dataLeft === -1) {
+        if (!r.canRead(8)) {
+          break;
+        }
+        const length = r.getUint32();
+        const type = r.getString(4);
+        if (type === "IDAT") {
+          dataLeft = length;
+          buffer = buffer.slice(8);
+          continue;
+        } else {
+          if (!r.canRead(length + 4)) {
+            break;
+          }
+          const data = readData({}, r, length, type);
+          const crc = r.getUint32();
+
+          const chunkLength = length + 12;
+          buffer = buffer.slice(chunkLength);
+          yield { ...data, dataLength: length } as const;
+        }
+      } else {
+        if (r.canRead(dataLeft + 4)) {
+          const data = r.getArrayBuffer(dataLeft);
+          const crc = r.getUint32();
+          const chunk = {
+            type: "IDAT",
+            data,
+            dataLength: dataLeft,
+          } as Chunk;
+          buffer = buffer.slice(dataLeft + 4);
+          dataLeft = -1;
+          yield chunk;
+        } else if (r.canRead(dataLeft)) {
+          break;
+        } else {
+          const data = typedArrayToBuffer(buffer);
+          const chunk = {
+            type: "IDAT",
+            data,
+            dataLength: data.byteLength,
+          } as Chunk;
+          buffer = new Uint8Array(0);
+          dataLeft -= data.byteLength;
+          yield chunk;
+          break;
+        }
       }
-      const chunkLength = chunk.dataLength + 12;
-      buffer = buffer.slice(chunkLength);
-      yield chunk;
     }
   }
 }

@@ -10,20 +10,29 @@ import { requestPixelStream } from "./stream";
     {
       const start = Date.now();
       const data = fs.readFileSync(filePath);
-      const { pixels, compressedDataSize, uncompressedDataSize } = await parse(
-        data.buffer
-      );
+      const { chunks, pixels, compressedDataSize, uncompressedDataSize } =
+        await parse(data.buffer);
       let i = 0;
       for (const row of pixels) {
         i++;
       }
+      const end = Date.now();
+      let idatCount = 0;
+      for (const chunk of chunks) {
+        if (chunk.type === "IDAT") {
+          idatCount++;
+          process.stdout.write(`\r  ${chunk.type} x${idatCount}`);
+        } else {
+          if (idatCount > 0) {
+            console.log();
+          }
+          console.log(`  ${chunk.type}`);
+        }
+      }
       console.log(
         `  data size: ${compressedDataSize} -> ${uncompressedDataSize}`
       );
-      console.log(`  sync: ${Date.now() - start}ms`);
-    }
-    if (file.includes("interlace")) {
-      continue;
+      console.log(`  sync: ${end - start}ms`);
     }
     {
       const start = Date.now();
@@ -48,6 +57,7 @@ import { requestPixelStream } from "./stream";
       }
       console.log(`  stream|1px: ${Date.now() - start}ms`);
     }
+    console.log();
   }
 })().catch((e) => {
   console.log(e);
