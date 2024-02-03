@@ -34,32 +34,29 @@ import { requestPixelStream } from "./stream";
       );
       console.log(`  sync: ${end - start}ms`);
     }
-    if (!file.includes("interlace")) {
-      {
-        const start = Date.now();
-        const stream = fs.createReadStream(filePath);
-        let i = 0;
-        const { head, body } = await requestPixelStream(stream);
-        for await (const row of body) {
-          i++;
-        }
-        console.log(`  stream: ${Date.now() - start}ms`);
+    {
+      const start = Date.now();
+      const stream = fs.createReadStream(filePath);
+      let i = 0;
+      const { head, body } = await requestPixelStream(stream);
+      for await (const row of body) {
+        i++;
       }
-      {
-        const start = Date.now();
-        const stream = fs.createReadStream(filePath);
-        let i = 0;
-        const { head, body } = await requestPixelStream(stream);
-        for await (const row of body) {
-          i++;
-          if (i === 1) {
-            break;
-          }
-        }
-        console.log(`  stream|1px: ${Date.now() - start}ms`);
-      }
+      console.log(`  stream: ${Date.now() - start}ms`);
     }
-
+    {
+      const start = Date.now();
+      const stream = fs.createReadStream(filePath);
+      let i = 0;
+      const { head, body } = await requestPixelStream(stream);
+      for await (const row of body) {
+        i++;
+        if (i === 1) {
+          break;
+        }
+      }
+      console.log(`  stream|1px: ${Date.now() - start}ms`);
+    }
     console.log();
   }
 })().catch((e) => {

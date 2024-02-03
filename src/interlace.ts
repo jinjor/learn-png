@@ -18,10 +18,11 @@ export const adam7: Interlacing[] = [
 type PassSizes = {
   passWidth: number;
   passHeight: number;
+  passLengthPerLine: number;
   passLength: number;
 };
 
-const calcPassSizes = (
+export const calcPassSizes = (
   width: number,
   height: number,
   bytesPerPixel: number,
@@ -30,8 +31,9 @@ const calcPassSizes = (
   const { xFactor, yFactor, xOffset, yOffset } = interlacing;
   const passWidth = Math.ceil((width - xOffset) / xFactor);
   const passHeight = Math.ceil((height - yOffset) / yFactor);
-  const passLength = passHeight * (passWidth * bytesPerPixel + 1);
-  return { passWidth, passHeight, passLength };
+  const passLengthPerLine = passWidth * bytesPerPixel + 1;
+  const passLength = passHeight * passLengthPerLine;
+  return { passWidth, passHeight, passLengthPerLine, passLength };
 };
 
 const rewritePixels = (

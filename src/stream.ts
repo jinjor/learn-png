@@ -16,6 +16,7 @@ import {
   Interpolation,
   adam7,
   adam7Interpolation,
+  calcPassSizes,
 } from "./interlace";
 
 export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
@@ -23,10 +24,10 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
   body: AsyncIterable<{
     y: number;
     colors: RGBA[];
-    interlace: Interlacing & Interpolation;
   }>;
 }> {
-  let rowIndex = -1;
+  let foundData = false;
+  let currentInterlaceIndex = -1;
   let ihdr: IHDR | undefined;
   let prevLine: Uint8Array | null = null;
   return splitIterable(rowStream(stream), (emitter, chunk) => {
@@ -44,37 +45,35 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
     if (ihdr == null) {
       throw new Error("IHDR is not defined");
     }
-    rowIndex++;
-    if (rowIndex === 0) {
+    if (!foundData) {
+      foundData = true;
       emitter.start(ihdr);
     }
     const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
-    if (ihdr.interlaceMethod === 1) {
-    } else {
-      const y = rowIndex;
-      const line = chunk.data;
-      const filterType = line[0];
-      const scanLine = line.slice(1);
-
-      inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
-      prevLine = scanLine;
-      const interlace = { ...adam7[6], ...adam7Interpolation[6] };
-
-      const colors: RGBA[] = [];
-      for (let x = 0; x < ihdr.width; x++) {
-        const offset = x * bytesPerPixel;
-        const r = scanLine[offset];
-        const g = scanLine[offset + 1];
-        const b = scanLine[offset + 2];
-        const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
-        colors.push({ r, g, b, a });
-      }
-      emitter.data({
-        y,
-        colors,
-        interlace,
-      });
+    const y = chunk.rowIndex;
+    const line = chunk.data;
+    const filterType = line[0];
+    const scanLine = line.slice(1);
+    if (currentInterlaceIndex !== chunk.interlaceIndex) {
+      currentInterlaceIndex = chunk.interlaceIndex;
+      prevLine = null;
     }
+    inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
+    prevLine = scanLine;
+
+    const colors: RGBA[] = [];
+    for (let x = 0; x < scanLine.length / bytesPerPixel; x++) {
+      const offset = x * bytesPerPixel;
+      const r = scanLine[offset];
+      const g = scanLine[offset + 1];
+      const b = scanLine[offset + 2];
+      const a = bytesPerPixel === 4 ? scanLine[offset + 3] : 255;
+      colors.push({ r, g, b, a });
+    }
+    emitter.data({
+      y,
+      colors,
+    });
   });
 }
 
@@ -82,6 +81,8 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
   let buffer = new Uint8Array(0);
 
   let ihdr: IHDR | undefined;
+  let interlaceIndex = 0;
+  let rowIndex = 0;
   for await (const chunk of unzippedStream(stream)) {
     yield chunk;
     if (chunk.type === "IHDR") {
@@ -94,15 +95,51 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
       }
       buffer = concatBuffers([buffer, chunk.data]);
       const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
-      const width = ihdr.width;
-      const bytesPerRow = width * bytesPerPixel + 1;
-      while (buffer.length >= bytesPerRow) {
-        const row = buffer.slice(0, bytesPerRow);
-        yield {
-          type: "row",
-          data: row,
-        } as const;
-        buffer = buffer.slice(bytesPerRow);
+      if (ihdr.interlaceMethod === 1) {
+        while (true) {
+          const interlace = adam7[interlaceIndex];
+          const passSizes = calcPassSizes(
+            ihdr.width,
+            ihdr.height,
+            bytesPerPixel,
+            interlace
+          );
+          if (rowIndex >= passSizes.passHeight) {
+            rowIndex = 0;
+            interlaceIndex++;
+            if (interlaceIndex === 7) {
+              break;
+            }
+            continue;
+          }
+          const bytesPerRow = passSizes.passLengthPerLine;
+          if (buffer.length < bytesPerRow) {
+            break;
+          }
+          const row = buffer.slice(0, bytesPerRow);
+          yield {
+            type: "row",
+            data: row,
+            interlaceIndex,
+            rowIndex,
+          } as const;
+          buffer = buffer.slice(bytesPerRow);
+          rowIndex++;
+        }
+      } else {
+        const width = ihdr.width;
+        const bytesPerRow = width * bytesPerPixel + 1;
+        while (buffer.length >= bytesPerRow) {
+          const row = buffer.slice(0, bytesPerRow);
+          yield {
+            type: "row",
+            data: row,
+            interlaceIndex: -1,
+            rowIndex,
+          } as const;
+          buffer = buffer.slice(bytesPerRow);
+          rowIndex++;
+        }
       }
     }
   }

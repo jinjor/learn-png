@@ -50,7 +50,7 @@ button2.onclick = async () => {
 
   const ctx = canvas.getContext("2d")!;
 
-  for await (const { y, colors, interlace } of body) {
+  for await (const { y, colors } of body) {
     for (let x = 0; x < colors.length; x++) {
       const pixel = colors[x];
       const color = `rgb(${pixel.r}, ${pixel.g}, ${pixel.b})`;
