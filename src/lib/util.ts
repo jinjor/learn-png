@@ -1,19 +1,19 @@
-export const concatBuffers = (bufs: Uint8Array[]): Uint8Array => {
-  const totalLength = bufs.reduce((acc, buf) => acc + buf.length, 0);
-  const concatBuf = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const buf of bufs) {
-    concatBuf.set(buf, offset);
-    offset += buf.length;
-  }
-  return concatBuf;
-};
-
-export const typedArrayToBuffer = (array: Uint8Array): ArrayBuffer => {
+export const typedArrayToArrayBuffer = (array: Uint8Array): ArrayBuffer => {
   return array.buffer.slice(
     array.byteOffset,
     array.byteLength + array.byteOffset
   );
+};
+
+export const concatArrayBuffers = (bufs: ArrayBuffer[]): ArrayBuffer => {
+  const totalLength = bufs.reduce((acc, buf) => acc + buf.byteLength, 0);
+  const concatBuf = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const buf of bufs) {
+    concatBuf.set(new Uint8Array(buf), offset);
+    offset += buf.byteLength;
+  }
+  return concatBuf.buffer;
 };
 
 export const splitIterable = <H, S, T>(

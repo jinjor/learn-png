@@ -71,11 +71,12 @@ export const inversePassFiltersSync = (
   width: number,
   height: number,
   bytesPerPixel: number,
-  inversePassFilters: (
+  applyPassFilters: (
     bytesPerPixel: number,
     width: number,
     height: number,
-    src: Uint8Array
+    src: Uint8Array,
+    inverse: boolean
   ) => Uint8Array,
   src: Uint8Array
 ) => {
@@ -83,11 +84,12 @@ export const inversePassFiltersSync = (
   for (let i = 0; i < adam7.length; i++) {
     const interlace = adam7[i];
     const passSizes = calcPassSizes(width, height, bytesPerPixel, interlace);
-    const passPixels = inversePassFilters(
+    const passPixels = applyPassFilters(
       bytesPerPixel,
       passSizes.passWidth,
       passSizes.passHeight,
-      src
+      src,
+      true
     );
     rewritePixels(
       width,
