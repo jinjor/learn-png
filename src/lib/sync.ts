@@ -1,5 +1,5 @@
 import pako from "pako";
-import { concatBuffers } from "./util";
+import { concatArrayBuffers } from "./util";
 import {
   Chunk,
   Context,
@@ -47,7 +47,7 @@ export const parse = async (buffer: ArrayBuffer): Promise<SyncParseResult> => {
     throw new Error("IHDR is not defined");
   }
 
-  const zipped = concatBuffers(
+  const zipped = concatArrayBuffers(
     chunks.flatMap((chunk) => {
       if (!("unknown" in chunk) && chunk.type === "IDAT") {
         return chunk.data;
@@ -56,7 +56,7 @@ export const parse = async (buffer: ArrayBuffer): Promise<SyncParseResult> => {
     })
   );
   const unzipped = await unzip(zipped);
-  const compressedDataSize = zipped.length;
+  const compressedDataSize = zipped.byteLength;
   const uncompressedDataSize = unzipped.length;
   const pixels = inverseAllFilters(ihdr, unzipped);
   return {

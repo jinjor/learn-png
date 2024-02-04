@@ -8,7 +8,11 @@ import {
   readData,
   readSignature,
 } from "./parse";
-import { concatBuffers, splitIterable, typedArrayToBuffer } from "./util";
+import {
+  concatArrayBuffers,
+  splitIterable,
+  typedArrayToArrayBuffer,
+} from "./util";
 import { Reader } from "./reader";
 import { inverseFilter } from "./filter";
 import {
@@ -56,7 +60,7 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
     }
     const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
     const y = chunk.rowIndex;
-    const line = chunk.data;
+    const line = new Uint8Array(chunk.data);
     const filterType = line[0];
     const scanLine = line.slice(1);
     if (prevInterlaceIndex !== chunk.interlaceIndex) {
@@ -97,7 +101,7 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
 }
 
 export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
-  let buffer = new Uint8Array(0);
+  let buffer = new ArrayBuffer(0);
 
   let ihdr: IHDR | undefined;
   let interlaceIndex = 0;
@@ -112,7 +116,7 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
       if (ihdr == null) {
         throw new Error("IHDR is not defined");
       }
-      buffer = concatBuffers([buffer, chunk.data]);
+      buffer = concatArrayBuffers([buffer, chunk.data]);
       const bytesPerPixel = getbytesPerPixel(ihdr.colorType, ihdr.bitDepth);
       if (ihdr.interlaceMethod === 1) {
         while (true) {
@@ -132,7 +136,7 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
             continue;
           }
           const bytesPerRow = passSizes.passLengthPerLine;
-          if (buffer.length < bytesPerRow) {
+          if (buffer.byteLength < bytesPerRow) {
             break;
           }
           const row = buffer.slice(0, bytesPerRow);
@@ -148,7 +152,7 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
       } else {
         const width = ihdr.width;
         const bytesPerRow = width * bytesPerPixel + 1;
-        while (buffer.length >= bytesPerRow) {
+        while (buffer.byteLength >= bytesPerRow) {
           const row = buffer.slice(0, bytesPerRow);
           yield {
             type: "row",
@@ -170,11 +174,11 @@ export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
     resolve = r;
   });
   let done = false;
-  let results: (KnownChunk | { type: "data"; data: Uint8Array })[] = [];
+  let results: (KnownChunk | { type: "data"; data: ArrayBuffer })[] = [];
 
   const inflator = new pako.Inflate();
   inflator.onData = (data: Uint8Array) => {
-    results.push({ type: "data", data });
+    results.push({ type: "data", data: typedArrayToArrayBuffer(data) });
     resolve();
     promise = new Promise<void>((r) => {
       resolve = r;
@@ -207,13 +211,13 @@ export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
 export async function* chunkStream(
   stream: AsyncIterable<Uint8Array>
 ): AsyncIterable<Chunk> {
-  let buffer = new Uint8Array(0);
+  let buffer = new ArrayBuffer(0);
   let sigRead = false;
   let dataLeft = -1;
   for await (const chunk of stream) {
-    buffer = concatBuffers([buffer, chunk]);
+    buffer = concatArrayBuffers([buffer, typedArrayToArrayBuffer(chunk)]);
     while (true) {
-      const r = new Reader(buffer.buffer, buffer.byteOffset);
+      const r = new Reader(buffer);
       if (!sigRead) {
         if (readSignature(r) !== true) {
           throw new Error("Invalid PNG signature");
@@ -258,13 +262,13 @@ export async function* chunkStream(
         } else if (r.canRead(dataLeft)) {
           break;
         } else {
-          const data = typedArrayToBuffer(buffer);
+          const data = buffer;
           const chunk = {
             type: "IDAT",
             data,
             dataLength: data.byteLength,
           } as Chunk;
-          buffer = new Uint8Array(0);
+          buffer = new ArrayBuffer(0);
           dataLeft -= data.byteLength;
           yield chunk;
           break;

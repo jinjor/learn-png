@@ -41,7 +41,7 @@ export type PLTE = {
 };
 export type IDAT = {
   type: "IDAT";
-  data: Uint8Array;
+  data: ArrayBuffer;
 };
 export type IEND = {
   type: "IEND";
@@ -117,8 +117,8 @@ export const readSignature = (r: Reader): boolean | null => {
     return null;
   }
   const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
-  for (let i = 0; i < pngSignature.length; i++) {
-    if (r.getUint8() !== pngSignature[i]) {
+  for (const s of pngSignature) {
+    if (r.getUint8() !== s) {
       return false;
     }
   }
