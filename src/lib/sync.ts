@@ -195,7 +195,7 @@ export const tryAllFilters = async (buffer: ArrayBuffer): Promise<void> => {
       pixels,
       i
     );
-    const recompressed = await zip(changed, { level: 9 });
+    const recompressed = await zip(changed);
     console.log(`filter ${i}: ${recompressed.byteLength}`);
   }
 };
