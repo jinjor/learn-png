@@ -1,51 +1,49 @@
-export const inverseFilter = (
+export const applyFilter = (
   filterType: number,
   bytesPerPixel: number,
   scanLine: Uint8Array,
-  prevLine: Uint8Array | null
+  prevLine: Uint8Array | null,
+  inverse: boolean
+) => {
+  for (let i = 0; i < scanLine.length; i++) {
+    const value = calcValueForPixel(
+      filterType,
+      bytesPerPixel,
+      scanLine,
+      prevLine,
+      i
+    );
+    scanLine[i] = (scanLine[i] + (inverse ? value : -value)) % 256;
+  }
+};
+
+const calcValueForPixel = (
+  filterType: number,
+  bytesPerPixel: number,
+  scanLine: Uint8Array,
+  prevLine: Uint8Array | null,
+  i: number
 ) => {
   switch (filterType) {
     case 0: {
-      break;
+      return 0;
     }
     case 1: {
-      for (let i = bytesPerPixel; i < scanLine.length; i++) {
-        scanLine[i] = (scanLine[i] + scanLine[i - bytesPerPixel]) % 256;
-      }
-      break;
+      return i >= bytesPerPixel ? scanLine[i - bytesPerPixel] : 0;
     }
     case 2: {
-      for (let i = 0; i < scanLine.length; i++) {
-        scanLine[i] = (scanLine[i] + prevLine![i]) % 256;
-      }
-      break;
+      return prevLine![i];
     }
     case 3: {
-      for (let i = 0; i < bytesPerPixel; i++) {
-        scanLine[i] = (scanLine[i] + prevLine![i] / 2) % 256;
-      }
-      for (let i = bytesPerPixel; i < scanLine.length; i++) {
-        scanLine[i] =
-          (scanLine[i] + (scanLine[i - bytesPerPixel] + prevLine![i]) / 2) %
-          256;
-      }
-      break;
+      const left = i >= bytesPerPixel ? scanLine[i - bytesPerPixel] : 0;
+      const up = prevLine![i];
+      return (left + up) / 2;
     }
     case 4: {
-      for (let i = 0; i < bytesPerPixel; i++) {
-        scanLine[i] = (scanLine[i] + paeth(0, prevLine![i], 0)) % 256;
-      }
-      for (let i = bytesPerPixel; i < scanLine.length; i++) {
-        scanLine[i] =
-          (scanLine[i] +
-            paeth(
-              scanLine[i - bytesPerPixel],
-              prevLine![i],
-              prevLine![i - bytesPerPixel]
-            )) %
-          256;
-      }
-      break;
+      const left = i >= bytesPerPixel ? scanLine[i - bytesPerPixel] : 0;
+      const up = prevLine![i];
+      const leftUp = i >= bytesPerPixel ? prevLine![i - bytesPerPixel] : 0;
+      return paeth(left, up, leftUp);
     }
     default: {
       throw new Error(`Invalid filter type: ${filterType}`);
@@ -71,11 +69,12 @@ const paeth = (
   return c;
 };
 
-export const inverseFiltersSync = (
+export const applyFiltersSync = (
   bytesPerPixel: number,
   width: number,
   height: number,
-  src: Uint8Array
+  src: Uint8Array,
+  inverse: boolean
 ): Uint8Array => {
   const bytesPerLine = bytesPerPixel * width + 1;
   const pixels = new Uint8Array(width * height * bytesPerPixel);
@@ -84,7 +83,7 @@ export const inverseFiltersSync = (
     const line = src.slice(y * bytesPerLine, (y + 1) * bytesPerLine);
     const filterType = line[0];
     const scanLine = line.slice(1);
-    inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
+    applyFilter(filterType, bytesPerPixel, scanLine, prevLine, inverse);
     prevLine = scanLine;
     pixels.set(scanLine, y * (bytesPerLine - 1));
   }

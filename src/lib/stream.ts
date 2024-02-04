@@ -14,7 +14,7 @@ import {
   typedArrayToArrayBuffer,
 } from "./util";
 import { Reader } from "./reader";
-import { inverseFilter } from "./filter";
+import { applyFilter } from "./filter";
 import {
   Interpolation,
   adam7,
@@ -66,7 +66,7 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
     if (prevInterlaceIndex !== chunk.interlaceIndex) {
       prevLine = null;
     }
-    inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
+    applyFilter(filterType, bytesPerPixel, scanLine, prevLine, true);
     prevLine = scanLine;
 
     const interlace = adam7[chunk.interlaceIndex];

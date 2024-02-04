@@ -11,7 +11,7 @@ import {
 } from "./parse";
 import { Reader } from "./reader";
 import { inversePassFiltersSync } from "./interlace";
-import { inverseFiltersSync } from "./filter";
+import { applyFiltersSync } from "./filter";
 const unzip = pako.inflate;
 
 type SyncParseResult = {
@@ -99,9 +99,9 @@ const inverseAllFilters = (ihdr: IHDR, unzipped: Uint8Array): RGBA[][] => {
           width,
           height,
           bytesPerPixel,
-          inverseFiltersSync,
+          applyFiltersSync,
           unzipped
         )
-      : inverseFiltersSync(bytesPerPixel, width, height, unzipped);
+      : applyFiltersSync(bytesPerPixel, width, height, unzipped, true);
   return convertToRGBA(bytesPerPixel, width, height, pixels);
 };
