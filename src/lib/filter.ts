@@ -1,9 +1,8 @@
-export const applyFilter = (
+export const inverseFilter = (
   filterType: number,
   bytesPerPixel: number,
   scanLine: Uint8Array,
-  prevLine: Uint8Array | null,
-  inverse: boolean
+  prevLine: Uint8Array | null
 ) => {
   for (let i = 0; i < scanLine.length; i++) {
     const value = calcValueForPixel(
@@ -13,7 +12,26 @@ export const applyFilter = (
       prevLine,
       i
     );
-    scanLine[i] = (scanLine[i] + (inverse ? value : -value)) % 256;
+    scanLine[i] = (scanLine[i] + value) % 256;
+  }
+};
+
+export const applyFilter = (
+  filterType: number,
+  bytesPerPixel: number,
+  scanLine: Uint8Array,
+  prevLine: Uint8Array | null,
+  destLine: Uint8Array
+) => {
+  for (let i = 0; i < scanLine.length; i++) {
+    const value = calcValueForPixel(
+      filterType,
+      bytesPerPixel,
+      scanLine,
+      prevLine,
+      i
+    );
+    destLine[i] = (scanLine[i] - value + 256) % 256;
   }
 };
 
@@ -67,25 +85,4 @@ const paeth = (
     return b;
   }
   return c;
-};
-
-export const applyFiltersSync = (
-  bytesPerPixel: number,
-  width: number,
-  height: number,
-  src: Uint8Array,
-  inverse: boolean
-): Uint8Array => {
-  const bytesPerLine = bytesPerPixel * width + 1;
-  const pixels = new Uint8Array(width * height * bytesPerPixel);
-  let prevLine: Uint8Array | null = null;
-  for (let y = 0; y < height; y++) {
-    const line = src.slice(y * bytesPerLine, (y + 1) * bytesPerLine);
-    const filterType = line[0];
-    const scanLine = line.slice(1);
-    applyFilter(filterType, bytesPerPixel, scanLine, prevLine, inverse);
-    prevLine = scanLine;
-    pixels.set(scanLine, y * (bytesPerLine - 1));
-  }
-  return pixels;
 };

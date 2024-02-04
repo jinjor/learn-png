@@ -1,10 +1,13 @@
 import fs from "fs";
-import { parse } from "./lib/sync";
+import { parse, tryAllFilters } from "./lib/sync";
 import { requestPixelStream } from "./lib/stream";
 
 (async () => {
   const files = fs.readdirSync("assets");
   for (const file of files) {
+    if (!file.endsWith(".png")) {
+      continue;
+    }
     const filePath = `assets/${file}`;
     console.log(file);
     {
@@ -33,6 +36,10 @@ import { requestPixelStream } from "./lib/stream";
         `  data size: ${compressedDataSize} -> ${uncompressedDataSize}`
       );
       console.log(`  sync: ${end - start}ms`);
+    }
+    {
+      const data = fs.readFileSync(filePath);
+      await tryAllFilters(data.buffer);
     }
     {
       const start = Date.now();
