@@ -1,21 +1,23 @@
 {
   "private": "true",
   "scripts": {
-    "build": "esbuild src/app.mts --bundle --outfile=dist/app.mjs --format=esm",
-    "serve": "npx -y http-server .",
-    "preview": "pnpm run build && pnpm run serve",
-    "test": "tsx src/test.ts"
+    "test": "tsx src/test.ts",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "pako": "^2.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
     "@types/pako": "^2.0.3",
+    "@types/react": "^18.2.52",
+    "@vitejs/plugin-react-swc": "^3.6.0",
     "biome": "^0.3.3",
-    "esbuild": "^0.19.11",
     "optipng-bin": "^9.0.0",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3"
-  },
-  "dependencies": {
-    "pako": "^2.1.0"
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12"
   }
 }
