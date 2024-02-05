@@ -1,0 +1,39 @@
+body {
+  margin: 0;
+  padding: 20px;
+  font-size: 20px;
+  font-family: monospace;
+  color: #333;
+}
+hr {
+  margin: 20px -20px;
+}
+
+ul {
+  padding: 0;
+  margin: 0;
+}
+li {
+  list-style-type: none;
+}
+button {
+  display: block;
+  width: 100%;
+}
+input,
+button,
+select {
+  font-size: inherit;
+  font-family: inherit;
+}
+pre {
+  margin: 0;
+  padding: 1rem;
+  border-radius: 4px;
+  background-color: #333;
+  color: #fff;
+  min-height: 100px;
+}
+canvas {
+  user-select: none;
+}
