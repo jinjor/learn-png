@@ -75,9 +75,11 @@ export const inversePassFiltersSync = (
     bytesPerPixel: number,
     width: number,
     height: number,
-    src: Uint8Array
+    src: Uint8Array,
+    forceFilterType: number | undefined
   ) => Uint8Array,
-  src: Uint8Array
+  src: Uint8Array,
+  forceFilterType: number | undefined
 ) => {
   const pixels = new Uint8Array(width * height * bytesPerPixel);
   for (let i = 0; i < adam7.length; i++) {
@@ -87,7 +89,8 @@ export const inversePassFiltersSync = (
       bytesPerPixel,
       passSizes.passWidth,
       passSizes.passHeight,
-      src
+      src,
+      forceFilterType
     );
     rewritePixels(
       width,

@@ -20,8 +20,14 @@ type SyncParseResult = {
   compressedDataSize: number;
   uncompressedDataSize: number;
 };
+export type SyncParseOptions = {
+  forceFilterType?: number;
+};
 
-export const parse = async (buffer: ArrayBuffer): Promise<SyncParseResult> => {
+export const parse = async (
+  buffer: ArrayBuffer,
+  options: SyncParseOptions = {}
+): Promise<SyncParseResult> => {
   const ctx = {} as Context;
   const r = new Reader(buffer);
   if (readSignature(r) !== true) {
@@ -66,7 +72,8 @@ export const parse = async (buffer: ArrayBuffer): Promise<SyncParseResult> => {
     bytesPerPixel,
     width,
     height,
-    unzipped
+    unzipped,
+    options?.forceFilterType
   );
   return {
     chunks,
@@ -104,7 +111,8 @@ const inverseAllFilters = (
   bytesPerPixel: number,
   width: number,
   height: number,
-  unzipped: Uint8Array
+  unzipped: Uint8Array,
+  forceFilterType: number | undefined
 ): Uint8Array => {
   return interlaceMethod === 1
     ? inversePassFiltersSync(
@@ -112,23 +120,32 @@ const inverseAllFilters = (
         height,
         bytesPerPixel,
         inverseFiltersSync,
-        unzipped
+        unzipped,
+        forceFilterType
       )
-    : inverseFiltersSync(bytesPerPixel, width, height, unzipped);
+    : inverseFiltersSync(
+        bytesPerPixel,
+        width,
+        height,
+        unzipped,
+        forceFilterType
+      );
 };
 
 const inverseFiltersSync = (
   bytesPerPixel: number,
   width: number,
   height: number,
-  src: Uint8Array
+  src: Uint8Array,
+  forceFilterType: number | undefined
 ): Uint8Array => {
   const bytesPerLine = bytesPerPixel * width + 1;
   const pixels = new Uint8Array(width * height * bytesPerPixel);
   let prevLine: Uint8Array | null = null;
   for (let y = 0; y < height; y++) {
     const line = src.slice(y * bytesPerLine, (y + 1) * bytesPerLine);
-    const filterType = line[0];
+    const filterType =
+      forceFilterType != null ? (y === 0 ? 0 : forceFilterType) : line[0];
     const scanLine = line.slice(1);
     inverseFilter(filterType, bytesPerPixel, scanLine, prevLine);
     prevLine = scanLine;
@@ -186,7 +203,8 @@ export const tryAllFilters = async (buffer: ArrayBuffer): Promise<void> => {
       bytesPerPixel,
       width,
       height,
-      before
+      before,
+      undefined
     );
     const changed = applyAllFilters(
       getbytesPerPixel(ihdr.colorType, ihdr.bitDepth),

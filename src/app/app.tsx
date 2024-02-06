@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { parse } from "../lib/sync";
+import { SyncParseOptions, parse } from "../lib/sync";
 import { requestPixelStream } from "../lib/stream";
 
 export const App = () => {
@@ -27,6 +27,7 @@ export const App = () => {
 const Item = ({ imagePath }: { imagePath: string }) => {
   const canvasContainerRef = React.useRef<HTMLDivElement>(null);
   const [log, setLog] = React.useState<string[]>([]);
+  const [filterType, setFilterType] = React.useState(0);
 
   const reset = () => {
     setLog([]);
@@ -39,11 +40,11 @@ const Item = ({ imagePath }: { imagePath: string }) => {
     setLog((prev) => [...prev, s]);
   }, []);
 
-  const handleClickRead = async () => {
+  const handleClickRead = async (options?: SyncParseOptions) => {
     const container = reset();
     const src = imagePath + "?" + Date.now();
     const start = Date.now();
-    await fetchAndDrawSync(src, container, appendLog);
+    await fetchAndDrawSync(src, container, appendLog, options);
     console.log("time1:", Date.now() - start);
   };
 
@@ -53,6 +54,10 @@ const Item = ({ imagePath }: { imagePath: string }) => {
     const start = Date.now();
     await fetchAndDrawStream(src, container, appendLog);
     console.log("time2:", Date.now() - start);
+  };
+
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFilterType(parseInt(e.target.value));
   };
 
   return (
@@ -68,10 +73,24 @@ const Item = ({ imagePath }: { imagePath: string }) => {
           }}
         >
           <li>
-            <button onClick={handleClickRead}>Read (sync)</button>
+            <button onClick={() => handleClickRead()}>Read (sync)</button>
           </li>
           <li>
             <button onClick={handleClickReadStream}>Read (stream)</button>
+          </li>
+          <li style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={() => handleClickRead({ forceFilterType: filterType })}
+            >
+              Read (forced filter)
+            </button>
+            <input
+              type="number"
+              min={0}
+              max={4}
+              onInput={handleInput}
+              value={filterType}
+            ></input>
           </li>
         </ul>
       </div>
@@ -108,12 +127,13 @@ const createNewCanvas = (container: HTMLDivElement) => {
 const fetchAndDrawSync = async (
   src: string,
   container: HTMLDivElement,
-  log: (s: string) => void
+  log: (s: string) => void,
+  options?: SyncParseOptions
 ) => {
   log("started");
   const res = await fetch(src);
   const binary = await res.arrayBuffer();
-  const { pixels } = await parse(binary);
+  const { pixels } = await parse(binary, options);
   const width = pixels[0].length;
   const height = pixels.length;
   const canvas = createNewCanvas(container);
