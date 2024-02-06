@@ -1,5 +1,5 @@
 import fs from "fs";
-import { parse, tryAllFilters } from "./lib/sync";
+import { parse } from "./lib/sync";
 import { requestPixelStream } from "./lib/stream";
 
 (async () => {
@@ -39,7 +39,10 @@ import { requestPixelStream } from "./lib/stream";
     }
     {
       const data = fs.readFileSync(filePath);
-      await tryAllFilters(data.buffer);
+      const { filterComparison } = await parse(data.buffer, { analyze: true });
+      for (const [i, v] of filterComparison!.entries()) {
+        console.log(`  filter${i}: ${v}`);
+      }
     }
     {
       const start = Date.now();

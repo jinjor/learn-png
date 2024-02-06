@@ -19,9 +19,11 @@ type SyncParseResult = {
   pixels: RGBA[][];
   compressedDataSize: number;
   uncompressedDataSize: number;
+  filterComparison?: number[];
 };
 export type SyncParseOptions = {
   forceFilterType?: number;
+  analyze?: boolean;
 };
 
 export const parse = async (
@@ -75,12 +77,38 @@ export const parse = async (
     unzipped,
     options?.forceFilterType
   );
-  return {
+  const result: SyncParseResult = {
     chunks,
     pixels: convertToRGBA(bytesPerPixel, width, height, pixels),
     compressedDataSize,
     uncompressedDataSize,
   };
+
+  if (options.analyze) {
+    const filterComparison: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const before = new Uint8Array(unzipped.buffer.slice(0));
+      const pixels = inverseAllFilters(
+        interlaceMethod,
+        bytesPerPixel,
+        width,
+        height,
+        before,
+        undefined
+      );
+      const changed = applyAllFilters(
+        getbytesPerPixel(ihdr.colorType, ihdr.bitDepth),
+        ihdr.width,
+        ihdr.height,
+        pixels,
+        i
+      );
+      const recompressed = await zip(changed);
+      filterComparison.push(recompressed.byteLength);
+    }
+    result.filterComparison = filterComparison;
+  }
+  return result;
 };
 
 const convertToRGBA = (
@@ -152,70 +180,6 @@ const inverseFiltersSync = (
     pixels.set(scanLine, y * (bytesPerLine - 1));
   }
   return pixels;
-};
-
-export const tryAllFilters = async (buffer: ArrayBuffer): Promise<void> => {
-  const ctx = {} as Context;
-  const r = new Reader(buffer);
-  if (readSignature(r) !== true) {
-    throw new Error("Invalid PNG signature");
-  }
-  const chunks: Chunk[] = [];
-  while (true) {
-    const chunk = readChunk(ctx, r)!;
-    chunks.push(chunk);
-    if (chunk.type === "IEND") {
-      break;
-    }
-  }
-  for (const chunk of chunks) {
-    if (chunk.type === "IDAT") {
-      // skip
-    } else {
-      // console.log(chunk);
-    }
-  }
-  const ihdr = ctx.ihdr;
-  if (ihdr == null) {
-    throw new Error("IHDR is not defined");
-  }
-
-  const zipped = concatArrayBuffers(
-    chunks.flatMap((chunk) => {
-      if (!("unknown" in chunk) && chunk.type === "IDAT") {
-        return chunk.data;
-      }
-      return [];
-    })
-  );
-  const unzipped = await unzip(zipped);
-
-  if (ihdr.interlaceMethod === 1) {
-    return;
-  }
-
-  const { width, height, colorType, bitDepth, interlaceMethod } = ihdr;
-  const bytesPerPixel = getbytesPerPixel(colorType, bitDepth);
-  for (let i = 0; i < 5; i++) {
-    const before = new Uint8Array(unzipped.buffer.slice(0));
-    const pixels = inverseAllFilters(
-      interlaceMethod,
-      bytesPerPixel,
-      width,
-      height,
-      before,
-      undefined
-    );
-    const changed = applyAllFilters(
-      getbytesPerPixel(ihdr.colorType, ihdr.bitDepth),
-      ihdr.width,
-      ihdr.height,
-      pixels,
-      i
-    );
-    const recompressed = await zip(changed);
-    console.log(`filter ${i}: ${recompressed.byteLength}`);
-  }
 };
 
 const applyAllFilters = (

@@ -92,6 +92,11 @@ const Item = ({ imagePath }: { imagePath: string }) => {
               value={filterType}
             ></input>
           </li>
+          <li>
+            <button onClick={() => handleClickRead({ analyze: true })}>
+              Analyze
+            </button>
+          </li>
         </ul>
       </div>
       <div style={{ flexGrow: 1 }}>
@@ -133,7 +138,12 @@ const fetchAndDrawSync = async (
   log("started");
   const res = await fetch(src);
   const binary = await res.arrayBuffer();
-  const { pixels } = await parse(binary, options);
+  const { pixels, filterComparison } = await parse(binary, options);
+  if (filterComparison) {
+    for (const [filterType, size] of filterComparison.entries()) {
+      log(`Filter ${filterType}: ${size}`);
+    }
+  }
   const width = pixels[0].length;
   const height = pixels.length;
   const canvas = createNewCanvas(container);
