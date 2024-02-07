@@ -24,6 +24,7 @@ type SyncParseResult = {
 export type SyncParseOptions = {
   forceFilterType?: number;
   analyze?: boolean;
+  interlaceLevel?: number;
 };
 
 export const parse = async (
@@ -75,7 +76,8 @@ export const parse = async (
     width,
     height,
     unzipped,
-    options?.forceFilterType
+    options.forceFilterType,
+    options.interlaceLevel
   );
   const result: SyncParseResult = {
     chunks,
@@ -94,7 +96,8 @@ export const parse = async (
         width,
         height,
         before,
-        undefined
+        undefined,
+        options.interlaceLevel
       );
       const changed = applyAllFilters(
         getbytesPerPixel(ihdr.colorType, ihdr.bitDepth),
@@ -140,7 +143,8 @@ const inverseAllFilters = (
   width: number,
   height: number,
   unzipped: Uint8Array,
-  forceFilterType: number | undefined
+  forceFilterType: number | undefined,
+  interlaceLevel: number | undefined
 ): Uint8Array => {
   return interlaceMethod === 1
     ? inversePassFiltersSync(
@@ -149,7 +153,8 @@ const inverseAllFilters = (
         bytesPerPixel,
         inverseFiltersSync,
         unzipped,
-        forceFilterType
+        forceFilterType,
+        interlaceLevel
       )
     : inverseFiltersSync(
         bytesPerPixel,

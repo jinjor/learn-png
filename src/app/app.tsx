@@ -1,12 +1,15 @@
 import React, { useCallback } from "react";
 import { SyncParseOptions, parse } from "../lib/sync";
-import { requestPixelStream } from "../lib/stream";
+import { StreamParseOptions, requestPixelStream } from "../lib/stream";
 
 export const App = () => {
   const images = [
     "./assets/sd.png",
     "./assets/sd_x.png",
+    "./assets/sd_interlace.png",
+    "./assets/terminal.png",
     "./assets/mac_ss.png",
+    "./assets/mac_ss_interlace.png",
     "./assets/mac_ss_large.png",
     "./assets/mac_ss_large_interlace.png",
   ];
@@ -28,6 +31,7 @@ const Item = ({ imagePath }: { imagePath: string }) => {
   const canvasContainerRef = React.useRef<HTMLDivElement>(null);
   const [log, setLog] = React.useState<string[]>([]);
   const [filterType, setFilterType] = React.useState(0);
+  const [interlaceLevel, setInterlaceLevel] = React.useState(7);
 
   const reset = () => {
     setLog([]);
@@ -40,7 +44,7 @@ const Item = ({ imagePath }: { imagePath: string }) => {
     setLog((prev) => [...prev, s]);
   }, []);
 
-  const handleClickRead = async (options?: SyncParseOptions) => {
+  const handleReadSync = async (options?: SyncParseOptions) => {
     const container = reset();
     const src = imagePath + "?" + Date.now();
     const start = Date.now();
@@ -48,16 +52,21 @@ const Item = ({ imagePath }: { imagePath: string }) => {
     console.log("time1:", Date.now() - start);
   };
 
-  const handleClickReadStream = async () => {
+  const handleReadStream = async (options?: StreamParseOptions) => {
     const container = reset();
     const src = imagePath + "?" + Date.now();
     const start = Date.now();
-    await fetchAndDrawStream(src, container, appendLog);
+    await fetchAndDrawStream(src, container, appendLog, options);
     console.log("time2:", Date.now() - start);
   };
 
-  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputFilterType = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFilterType(parseInt(e.target.value));
+  };
+  const handleInputInterlaceLevel = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setInterlaceLevel(parseInt(e.target.value));
   };
 
   return (
@@ -73,14 +82,14 @@ const Item = ({ imagePath }: { imagePath: string }) => {
           }}
         >
           <li>
-            <button onClick={() => handleClickRead()}>Read (sync)</button>
+            <button onClick={() => handleReadSync()}>Read (sync)</button>
           </li>
           <li>
-            <button onClick={handleClickReadStream}>Read (stream)</button>
+            <button onClick={() => handleReadStream()}>Read (stream)</button>
           </li>
           <li style={{ display: "flex", gap: 10 }}>
             <button
-              onClick={() => handleClickRead({ forceFilterType: filterType })}
+              onClick={() => handleReadSync({ forceFilterType: filterType })}
             >
               Read (forced filter)
             </button>
@@ -88,12 +97,24 @@ const Item = ({ imagePath }: { imagePath: string }) => {
               type="number"
               min={0}
               max={4}
-              onInput={handleInput}
+              onInput={handleInputFilterType}
               value={filterType}
             ></input>
           </li>
+          <li style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => handleReadStream({ interlaceLevel })}>
+              Read (temporary interlace)
+            </button>
+            <input
+              type="number"
+              min={0}
+              max={7}
+              onInput={handleInputInterlaceLevel}
+              value={interlaceLevel}
+            ></input>
+          </li>
           <li>
-            <button onClick={() => handleClickRead({ analyze: true })}>
+            <button onClick={() => handleReadSync({ analyze: true })}>
               Analyze
             </button>
           </li>
@@ -165,11 +186,15 @@ const fetchAndDrawSync = async (
 const fetchAndDrawStream = async (
   src: string,
   container: HTMLDivElement,
-  log: (s: string) => void
+  log: (s: string) => void,
+  options?: StreamParseOptions
 ) => {
   log("started");
   const res = await fetch(src);
-  const { head, body } = await requestPixelStream(bufferStream(res.body!));
+  const { head, body } = await requestPixelStream(
+    bufferStream(res.body!),
+    options
+  );
   const canvas = createNewCanvas(container);
   canvas.width = head.width;
   canvas.height = head.height;

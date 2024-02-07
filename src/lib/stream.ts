@@ -24,7 +24,13 @@ import {
   remapY,
 } from "./interlace";
 
-export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
+export type StreamParseOptions = {
+  interlaceLevel?: number;
+};
+export function requestPixelStream(
+  stream: AsyncIterable<Uint8Array>,
+  options: StreamParseOptions = {}
+): Promise<{
   head: IHDR;
   body: AsyncIterable<{
     interpolation?: Interpolation & { interlaceIndex: number };
@@ -63,6 +69,11 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
     const line = new Uint8Array(chunk.data);
     const filterType = line[0];
     const scanLine = line.slice(1);
+    if (options.interlaceLevel != null) {
+      if (chunk.interlaceIndex >= options.interlaceLevel) {
+        return;
+      }
+    }
     if (prevInterlaceIndex !== chunk.interlaceIndex) {
       prevLine = null;
     }
@@ -100,7 +111,7 @@ export function requestPixelStream(stream: AsyncIterable<Uint8Array>): Promise<{
   });
 }
 
-export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
+async function* rowStream(stream: AsyncIterable<Uint8Array>) {
   let buffer = new ArrayBuffer(0);
 
   let ihdr: IHDR | undefined;
@@ -168,7 +179,7 @@ export async function* rowStream(stream: AsyncIterable<Uint8Array>) {
   }
 }
 
-export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
+async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
   let resolve: () => void;
   let promise = new Promise<void>((r) => {
     resolve = r;
@@ -208,7 +219,7 @@ export async function* unzippedStream(stream: AsyncIterable<Uint8Array>) {
   }
 }
 
-export async function* chunkStream(
+async function* chunkStream(
   stream: AsyncIterable<Uint8Array>
 ): AsyncIterable<Chunk> {
   let buffer = new ArrayBuffer(0);

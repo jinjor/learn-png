@@ -79,10 +79,11 @@ export const inversePassFiltersSync = (
     forceFilterType: number | undefined
   ) => Uint8Array,
   src: Uint8Array,
-  forceFilterType: number | undefined
+  forceFilterType: number | undefined,
+  interlaceLevel: number | undefined
 ) => {
   const pixels = new Uint8Array(width * height * bytesPerPixel);
-  for (let i = 0; i < adam7.length; i++) {
+  for (let i = 0; i < (interlaceLevel ?? adam7.length); i++) {
     const interlace = adam7[i];
     const passSizes = calcPassSizes(width, height, bytesPerPixel, interlace);
     const passPixels = inversePassFilters(
