@@ -3,7 +3,9 @@ import { parse } from "./lib/sync";
 import { requestPixelStream } from "./lib/stream";
 
 (async () => {
-  const files = fs.readdirSync("assets");
+  // const files = fs.readdirSync("assets");
+  const files = ["hamburger.png"];
+  // const files = ["mac_ss.png"];
   for (const file of files) {
     if (!file.endsWith(".png")) {
       continue;
@@ -30,6 +32,7 @@ import { requestPixelStream } from "./lib/stream";
             console.log();
           }
           console.log(`  ${chunk.type}`);
+          console.log(chunk);
         }
       }
       console.log(
