@@ -104,10 +104,9 @@ const readExifValue = (r: Reader, tag: number, type: number, count: number) => {
     case 7: {
       switch (tag) {
         case 37510: {
-          const code = r.getStringUntilNull(8);
-          if (code !== "ASCII") {
-            // throw new Error("Not implemented: " + code);
-            break;
+          const code = r.getString(8);
+          if (!code.startsWith("ASCII")) {
+            throw new Error("Not implemented: " + code);
           }
           const comment = r.getString(count - 8);
           return comment;
