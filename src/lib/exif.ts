@@ -27,15 +27,15 @@ export const readExifData = (buffer: ArrayBuffer) => {
 
 const nameOfExifTag = (tag: number) => {
   switch (tag) {
-    case 1:
+    case 0:
       return "GPSVersionID";
-    case 2:
+    case 1:
       return "GPSLatitudeRef";
-    case 3:
+    case 2:
       return "GPSLatitude";
-    case 4:
+    case 3:
       return "GPSLongitudeRef";
-    case 5:
+    case 4:
       return "GPSLongitude";
     case 6:
       return "GPSAltitudeRef";
@@ -208,7 +208,7 @@ const readExifValue = (r: Reader, tag: number, type: number, count: number) => {
       return r.getUint32();
     }
     case 5: {
-      return r.getInt32() / r.getInt32();
+      return repeat(r, count, (r) => r.getInt32() / r.getInt32());
     }
     case 7: {
       switch (tag) {
@@ -258,4 +258,12 @@ const readExifValue = (r: Reader, tag: number, type: number, count: number) => {
       throw new Error("Invalid EXIF type: " + type);
     }
   }
+};
+
+const repeat = <T>(r: Reader, count: number, fn: (r: Reader) => T): T | T[] => {
+  const values: T[] = [];
+  for (let i = 0; i < count; i++) {
+    values.push(fn(r));
+  }
+  return values.length === 1 ? values[0] : values;
 };

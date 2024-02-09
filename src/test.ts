@@ -33,6 +33,22 @@ import { requestPixelStream } from "./lib/stream";
           }
           console.log(`  ${chunk.type}`);
           console.log(chunk);
+          if (chunk.type === "eXIf" && !("unknown" in chunk)) {
+            if (chunk.data.GPSLatitudeRef && chunk.data.GPSLatitude) {
+              const lat = chunk.data.GPSLatitude.reduce((acc, v, i) => {
+                return acc + v / Math.pow(60, i);
+              }, 0);
+              console.log(`  GPSLatitude: ${chunk.data.GPSLatitudeRef} ${lat}`);
+            }
+            if (chunk.data.GPSLongitudeRef && chunk.data.GPSLongitude) {
+              const lon = chunk.data.GPSLongitude.reduce((acc, v, i) => {
+                return acc + v / Math.pow(60, i);
+              }, 0);
+              console.log(
+                `  GPSLongitude: ${chunk.data.GPSLongitudeRef} ${lon}`
+              );
+            }
+          }
         }
       }
       console.log(
