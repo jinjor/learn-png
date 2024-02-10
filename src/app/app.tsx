@@ -4,6 +4,8 @@ import { StreamParseOptions, requestPixelStream } from "../lib/stream";
 
 export const App = () => {
   const images = [
+    "./assets/hamburger.png",
+    "./assets/hamburger_interlace.png",
     "./assets/sd.png",
     "./assets/sd_x.png",
     "./assets/sd_interlace.png",
