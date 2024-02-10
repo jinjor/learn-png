@@ -37,10 +37,12 @@ const nameOfExifTag = (tag: number) => {
       return "GPSLongitudeRef";
     case 4:
       return "GPSLongitude";
-    case 6:
+    case 5:
       return "GPSAltitudeRef";
-    case 7:
+    case 6:
       return "GPSAltitude";
+    case 7:
+      return "GPSTimeStamp";
     case 12:
       return "GPSSpeedRef";
     case 13:
