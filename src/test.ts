@@ -4,7 +4,7 @@ import { requestPixelStream } from "./lib/stream";
 
 (async () => {
   // const files = fs.readdirSync("assets");
-  const files = ["hamburger.png"];
+  const files = ["hamburger_hatenablog.png"];
   // const files = ["mac_ss.png"];
   for (const file of files) {
     if (!file.endsWith(".png")) {

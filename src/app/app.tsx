@@ -6,6 +6,11 @@ export const App = () => {
   const images = [
     "./assets/hamburger.png",
     "./assets/hamburger_interlace.png",
+    "./assets/hamburger_x.png",
+    "./assets/hamburger_hatenablog.png",
+    "./assets/hamburger_smarthr.png",
+    "./assets/hamburger_bakuraku.png",
+    "./assets/hamburger_knowledgework.png",
     "./assets/sd.png",
     "./assets/sd_x.png",
     "./assets/sd_interlace.png",
