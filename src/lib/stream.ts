@@ -14,7 +14,7 @@ import {
   typedArrayToArrayBuffer,
 } from "./util";
 import { Reader } from "./reader";
-import { applyFilter, inverseFilter } from "./filter";
+import { inverseFilter } from "./filter";
 import {
   Interpolation,
   adam7,

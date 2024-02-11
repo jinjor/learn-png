@@ -11,8 +11,6 @@ import {
 import { Reader } from "./reader";
 import { inversePassFiltersSync } from "./interlace";
 import { applyFilter, inverseFilter } from "./filter";
-const unzip = pako.inflate;
-const zip = pako.deflate;
 
 type SyncParseResult = {
   chunks: Chunk[];
@@ -64,7 +62,7 @@ export const parse = async (
       return [];
     })
   );
-  const unzipped = await unzip(zipped);
+  const unzipped = await pako.inflate(zipped);
   const compressedDataSize = zipped.byteLength;
   const uncompressedDataSize = unzipped.length;
 
@@ -106,7 +104,7 @@ export const parse = async (
         pixels,
         i
       );
-      const recompressed = await zip(changed);
+      const recompressed = await pako.deflate(changed);
       filterComparison.push(recompressed.byteLength);
     }
     result.filterComparison = filterComparison;

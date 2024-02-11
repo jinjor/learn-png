@@ -1,5 +1,6 @@
 import { readExifData } from "./exif";
 import { Reader } from "./reader";
+import pako from "pako";
 
 export type Context = {
   ihdr?: IHDR;
@@ -20,6 +21,10 @@ export type KnownChunkBody =
   | ITXT
   | PHYS
   | EXIF
+  | CHRM
+  | BKGD
+  | TIME
+  | ZTXT
   | IDOT;
 export type ChunkBody = KnownChunkBody | UnknownChunk;
 export type KnownChunk = ChunkBase & KnownChunkBody;
@@ -107,6 +112,36 @@ export type EXIF = {
 export type IDOT = {
   type: "iDOT";
 };
+export type CHRM = {
+  type: "cHRM";
+  whitePointX: number;
+  whitePointY: number;
+  redX: number;
+  redY: number;
+  greenX: number;
+  greenY: number;
+  blueX: number;
+  blueY: number;
+};
+export type BKGD = {
+  type: "bKGD";
+  backgroundColor: number[];
+};
+export type TIME = {
+  type: "tIME";
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+};
+export type ZTXT = {
+  type: "zTXt";
+  keyword: string;
+  compressionMethod: number;
+  text: string;
+};
 export type UnknownChunk = {
   unknown: true;
   type: string;
@@ -168,6 +203,14 @@ export const readData = (
       return readEXIF(r, length);
     case "iDOT":
       return readIDOT(r, length);
+    case "cHRM":
+      return readCHRM(r, length);
+    case "bKGD":
+      return readBKGD(r, length);
+    case "tIME":
+      return readTIME(r, length);
+    case "zTXt":
+      return readZTXT(r, length);
     default:
       r.skip(length);
       return {
@@ -349,6 +392,82 @@ const readIDOT = (r: Reader, length: number): IDOT => {
   r.skip(length);
   return {
     type: "iDOT",
+  };
+};
+const readCHRM = (r: Reader, length: number): CHRM => {
+  const whitePointX = r.getUint32();
+  const whitePointY = r.getUint32();
+  const redX = r.getUint32();
+  const redY = r.getUint32();
+  const greenX = r.getUint32();
+  const greenY = r.getUint32();
+  const blueX = r.getUint32();
+  const blueY = r.getUint32();
+  return {
+    type: "cHRM",
+    whitePointX,
+    whitePointY,
+    redX,
+    redY,
+    greenX,
+    greenY,
+    blueX,
+    blueY,
+  };
+};
+const readBKGD = (r: Reader, length: number): BKGD => {
+  switch (length) {
+    case 1:
+      return {
+        type: "bKGD",
+        backgroundColor: [r.getUint8()],
+      };
+    case 2:
+      return {
+        type: "bKGD",
+        backgroundColor: [r.getUint16(), r.getUint16()],
+      };
+    case 6:
+      return {
+        type: "bKGD",
+        backgroundColor: [r.getUint16(), r.getUint16(), r.getUint16()],
+      };
+    default:
+      throw new Error("Invalid bKGD chunk");
+  }
+};
+const readTIME = (r: Reader, _length: number): TIME => {
+  const year = r.getUint16();
+  const month = r.getUint8();
+  const day = r.getUint8();
+  const hour = r.getUint8();
+  const minute = r.getUint8();
+  const second = r.getUint8();
+  return {
+    type: "tIME",
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+  };
+};
+const readZTXT = (r: Reader, length: number): ZTXT => {
+  const keyword = r.getStringUntilNull(length - 1);
+  if (keyword == null) {
+    throw new Error("Invalid zTXt chunk");
+  }
+  const compressionMethod = r.getUint8();
+  const array = pako.inflate(
+    new Uint8Array(r.getArrayBuffer(length - keyword.length - 2))
+  );
+  const text = new TextDecoder("latin1").decode(array);
+  return {
+    type: "zTXt",
+    keyword,
+    compressionMethod,
+    text,
   };
 };
 
