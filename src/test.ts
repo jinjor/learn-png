@@ -2,10 +2,14 @@ import fs from "fs";
 import { parse } from "./lib/sync";
 import { requestPixelStream } from "./lib/stream";
 
+const args = process.argv.slice(2).filter((v) => !v.startsWith("-"));
+const options = process.argv.slice(2).filter((v) => v.startsWith("-"));
+const target = args[0] && args[0].split("/").at(-1);
+const showDetail = options.includes("--detail");
+
 (async () => {
-  // const files = fs.readdirSync("assets");
-  const files = ["hamburger_hatenablog.png"];
-  // const files = ["mac_ss.png"];
+  const files = target ? [target] : fs.readdirSync("assets");
+
   for (const file of files) {
     if (!file.endsWith(".png")) {
       continue;
@@ -30,9 +34,10 @@ import { requestPixelStream } from "./lib/stream";
         } else {
           if (idatCount > 0) {
             console.log();
+            idatCount = 0;
           }
           console.log(`  ${chunk.type}`);
-          console.log(chunk);
+          showDetail && console.log(chunk);
           if (chunk.type === "eXIf" && !("unknown" in chunk)) {
             if (chunk.data.GPSLatitudeRef && chunk.data.GPSLatitude) {
               const lat = chunk.data.GPSLatitude.reduce((acc, v, i) => {
