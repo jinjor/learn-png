@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 dependencies:
+  icc:
+    specifier: ^3.0.0
+    version: 3.0.0
   pako:
     specifier: ^2.1.0
     version: 2.1.0
@@ -31,9 +34,6 @@ devDependencies:
   biome:
     specifier: ^0.3.3
     version: 0.3.3
-  esbuild:
-    specifier: ^0.19.11
-    version: 0.19.11
   optipng-bin:
     specifier: ^9.0.0
     version: 9.0.0
@@ -1353,6 +1353,11 @@ packages:
       jsprim: 1.4.2
       sshpk: 1.18.0
     dev: true
+
+  /icc@3.0.0:
+    resolution: {integrity: sha512-UJ4TQuwih9YRoUIR/nGluSUXwPEPOQVFIcFziERtAv0OGWAeEg7E5FviTVLfI1b2eOVRVtqhLfosdOQHYO7EpA==}
+    engines: {node: '>=14'}
+    dev: false
 
   /ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}

@@ -1,6 +1,8 @@
 import fs from "fs";
 import { parse } from "./lib/sync";
 import { requestPixelStream } from "./lib/stream";
+import { parse as parseICC } from "icc";
+import pako from "pako";
 
 const args = process.argv.slice(2).filter((v) => !v.startsWith("-"));
 const options = process.argv.slice(2).filter((v) => v.startsWith("-"));
@@ -37,8 +39,15 @@ const showDetail = options.includes("--detail");
             idatCount = 0;
           }
           console.log(`  ${chunk.type}`);
-          showDetail && console.log(chunk);
-          if (chunk.type === "eXIf" && !("unknown" in chunk)) {
+          if (!showDetail) {
+            continue;
+          }
+          console.log(chunk);
+          if (chunk.type === "iCCP" && !("unknown" in chunk)) {
+            const data = pako.inflate(chunk.compressedProfile);
+            const profile = parseICC(Buffer.from(data));
+            console.log(profile);
+          } else if (chunk.type === "eXIf" && !("unknown" in chunk)) {
             if (chunk.data.GPSLatitudeRef && chunk.data.GPSLatitude) {
               const lat = chunk.data.GPSLatitude.reduce((acc, v, i) => {
                 return acc + v / Math.pow(60, i);

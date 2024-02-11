@@ -83,7 +83,7 @@ export type ICCP = {
   type: "iCCP";
   profileName: string;
   compressionMethod: number;
-  compressedProfile: number[];
+  compressedProfile: ArrayBuffer;
 };
 export type TEXT = {
   type: "tEXt";
@@ -315,10 +315,7 @@ const readICCP = (r: Reader, length: number): ICCP => {
     throw new Error("Invalid iCCP chunk");
   }
   const compressionMethod = r.getUint8();
-  const compressedProfile: number[] = [];
-  for (let i = 0; i < length - profileName.length - 2; i++) {
-    compressedProfile.push(r.getUint8());
-  }
+  const compressedProfile = r.getArrayBuffer(length - profileName.length - 2);
   return {
     type: "iCCP",
     profileName,
